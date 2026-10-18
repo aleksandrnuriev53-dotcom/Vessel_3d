@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#07121f" />
+  <title>3D Атлас: анатомия судна</title>
+
+  <link rel="stylesheet" href="style.css" />
+
+  <!-- SDK Telegram Mini Apps: даёт window.Telegram.WebApp и CSS-переменные безопасных зон -->
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+  <!-- Three.js подключается как ES-модуль через CDN (версия зафиксирована).
+       Для работы без интернета скачайте three@0.160.0 и поправьте пути ниже. -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+
+<body>
+  <div id="app">
+
+    <!-- WebGL-холст на весь экран (прозрачный: виден градиент из CSS) -->
+    <canvas id="scene" aria-label="Интерактивная 3D-модель грузового судна"></canvas>
+
+    <!-- Экран загрузки -->
+    <div id="loader" class="loader">
+      <div class="loader-ring"></div>
+      <p>Строим судно…</p>
+    </div>
+
+    <!-- Слой интерфейса (не перехватывает касания, кроме самих элементов) -->
+    <div id="ui" class="ui">
+
+      <!-- Верхняя панель -->
+      <header class="topbar glass">
+        <div class="topbar-ico" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 15l2 4h14l2-4-9-3-9 3z"/><path d="M12 12V4M12 4l5 3-5 2"/>
+          </svg>
+        </div>
+        <div class="topbar-tx">
+          <h1>Атлас анатомии судна</h1>
+          <p>Балкер · интерактивная 3D-модель</p>
+        </div>
+      </header>
+
+      <!-- Быстрая навигация по меткам -->
+      <nav id="chips" class="chips" aria-label="Метки модели"></nav>
+
+      <!-- Вертикальная панель кнопок справа -->
+      <div class="toolbar">
+        <button id="btn-reset" class="fab glass" aria-label="Сбросить вид" title="Сбросить вид">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 12a8 8 0 1 0 2.5-5.8"/><path d="M4 4v4.5h4.5"/>
+          </svg>
+        </button>
+        <button id="btn-rotate" class="fab glass" aria-label="Автовращение" aria-pressed="false" title="Автовращение">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12a9 9 0 0 1-15.5 6.2"/><path d="M3 12a9 9 0 0 1 15.5-6.2"/><path d="M18.5 2.5v3.8h-3.8M5.5 21.5v-3.8h3.8"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Подсказка (исчезает после первого касания) -->
+      <div id="hint" class="hint glass">Вращайте · щипком масштабируйте · нажимайте на светящиеся точки</div>
+
+      <!-- Нижняя «док»-панель с главной кнопкой -->
+      <div id="dock" class="dock">
+        <button id="btn-xray" class="xray-btn" aria-pressed="false">
+          <span class="xray-ic" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>
+            </svg>
+          </span>
+          <span class="xray-tx">
+            <b>Разрез / Рентген</b>
+            <small id="xray-state">Показать внутренний набор</small>
+          </span>
+          <span class="switch" aria-hidden="true"><i></i></span>
+        </button>
+      </div>
+
+      <!-- Карточка-шторка с описанием выбранной метки -->
+      <section id="card" class="card glass" role="dialog" aria-labelledby="card-title" aria-hidden="true">
+        <div class="card-grab" id="card-grab"><span></span></div>
+
+        <div class="card-head" id="card-head">
+          <div class="badge" id="card-badge">1/8</div>
+          <div class="titles">
+            <h2 id="card-title">Заголовок</h2>
+            <p id="card-sub">Subtitle</p>
+          </div>
+          <button class="icon-btn" id="card-close" aria-label="Закрыть">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+              <path d="M6 6l12 12M18 6L6 18"/>
+            </svg>
+          </button>
+        </div>
+
+        <div class="card-body">
+          <div class="diagram" id="card-diagram"></div>
+          <div class="desc" id="card-desc"></div>
+          <div class="tags" id="card-tags"></div>
+        </div>
+
+        <div class="card-foot">
+          <button id="card-prev" class="ghost-btn">‹ Назад</button>
+          <button id="card-next" class="ghost-btn">Далее ›</button>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script type="module" src="script.js"></script>
+</body>
+</html>
