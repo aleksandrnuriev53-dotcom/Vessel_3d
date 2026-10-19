@@ -17,6 +17,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { initStudy } from './study.js';   // «Шпаргалки»: контент studyData + логика панели
 
 // <<BUILD-START>>  (маркер для автоматической проверки генератора судна)
 
@@ -627,7 +628,7 @@ function makeNameTexture(text) {
 }
 function buildNames(ship, shellMats) {
   const mat = new THREE.MeshBasicMaterial({
-    map: makeNameTexture('Dashulya'), transparent: true, depthWrite: false,
+    map: makeNameTexture('ATLAS'), transparent: true, depthWrite: false,
     polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
   });
   mat.userData.shell = true;
@@ -1235,6 +1236,30 @@ function hideHint() {
 setTimeout(hideHint, 9000);
 
 /* ============================================================================
+   14б. ШПАРГАЛКИ (логика и контент — в study.js)
+   Пока панель открыта, 3D-фон размыт CSS-фильтром (body.study-open #scene).
+   Размытая картинка статична, поэтому через 0,7 с замораживаем рендер WebGL —
+   это экономит батарею и убирает лишнюю нагрузку от blur() на слабых телефонах.
+   ============================================================================ */
+let studyFrozen = false;
+let studyFreezeTimer = 0;
+initStudy({
+  tg,
+  haptic,
+  onOpen() {
+    closeCard();                 // карточка метки не должна оставаться под панелью
+    hideHint();
+    tween = null;                // отменяем «подлёт» камеры
+    clearTimeout(studyFreezeTimer);
+    studyFreezeTimer = setTimeout(() => { studyFrozen = true; }, 700);
+  },
+  onClose() {
+    clearTimeout(studyFreezeTimer);
+    studyFrozen = false;         // возвращаем живой рендер
+  },
+});
+
+/* ============================================================================
    15. РАЗМЕРЫ ЭКРАНА
    ============================================================================ */
 let firstFit = true;
@@ -1244,6 +1269,7 @@ function resize() {
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
+  if (studyFrozen) renderer.render(scene, camera);   // setSize очищает холст — перерисуем кадр, пока цикл на паузе
   if (firstFit) {                                    // стартовый ракурс подбираем под пропорции экрана
     firstFit = false;
     const hv = homeView();
@@ -1264,6 +1290,7 @@ const perf = { acc: 0, n: 0 };
 let loaderHidden = false;
 
 renderer.setAnimationLoop(() => {
+  if (studyFrozen) return;                           // панель «Шпаргалки» открыта — рендер на паузе
   const dt = Math.min(clock.getDelta(), 0.05);
   const t = clock.elapsedTime;
 

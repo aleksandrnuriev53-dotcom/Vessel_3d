@@ -73,6 +73,7 @@
 
       <!-- Нижняя «док»-панель с главной кнопкой -->
       <div id="dock" class="dock">
+       <div class="dock-row">
         <button id="btn-xray" class="xray-btn" aria-pressed="false">
           <span class="xray-ic" aria-hidden="true">
             <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -85,6 +86,15 @@
           </span>
           <span class="switch" aria-hidden="true"><i></i></span>
         </button>
+
+        <!-- Кнопка «Шпаргалки»: открывает стеклянную панель с конспектами -->
+        <button id="btn-study" class="study-btn" aria-haspopup="dialog" aria-expanded="false" aria-controls="study">
+          <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M5 4.5A1.5 1.5 0 0 1 6.5 3H18v15H6.5A1.5 1.5 0 0 0 5 19.5z"/><path d="M5 19.5A1.5 1.5 0 0 0 6.5 21H18v-3"/><path d="M9 8h5M9 11.5h5"/>
+          </svg>
+          <span>Шпаргалки</span>
+        </button>
+       </div>
       </div>
 
       <!-- Карточка-шторка с описанием выбранной метки -->
@@ -113,6 +123,57 @@
         <div class="card-foot">
           <button id="card-prev" class="ghost-btn">‹ Назад</button>
           <button id="card-next" class="ghost-btn">Далее ›</button>
+        </div>
+      </section>
+
+      <!-- ===== Шпаргалки: подложка (3D-фон блюрится через CSS) и стеклянная панель ===== -->
+      <div id="study-veil" class="study-veil" aria-hidden="true"></div>
+
+      <section id="study" class="study glass" role="dialog" aria-modal="true" aria-labelledby="study-title" aria-hidden="true">
+        <div class="study-grab" id="study-grab"><span></span></div>
+
+        <header class="study-head" id="study-head">
+          <div class="study-ic" aria-hidden="true">📝</div>
+          <div class="study-titles">
+            <h2 id="study-title">Шпаргалки</h2>
+            <p id="study-sub"></p>
+          </div>
+          <button class="icon-btn" id="study-close" aria-label="Закрыть шпаргалки">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+              <path d="M6 6l12 12M18 6L6 18"/>
+            </svg>
+          </button>
+        </header>
+
+        <!-- Вкладки тем (заполняются из studyData) -->
+        <nav class="study-tabs" id="study-tabs" role="tablist" aria-label="Темы шпаргалок"></nav>
+
+        <div class="study-body" id="study-body">
+          <div class="study-content" id="study-content" role="tabpanel"></div>
+          <p class="study-disc" id="study-disc"></p>
+        </div>
+
+        <footer class="study-foot">
+          <button id="study-prev" class="ghost-btn" type="button">‹</button>
+          <div class="study-dots" id="study-dots" aria-hidden="true"></div>
+          <button id="study-next" class="ghost-btn" type="button">›</button>
+        </footer>
+
+        <!-- Всплывающая карточка термина («на пальцах») -->
+        <div id="term-layer" class="term-layer" aria-hidden="true">
+          <div class="term-veil" id="term-veil"></div>
+          <article class="term-card" role="dialog" aria-labelledby="term-name">
+            <button class="icon-btn term-x" id="term-close" aria-label="Закрыть термин">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+                <path d="M6 6l12 12M18 6L6 18"/>
+              </svg>
+            </button>
+            <div class="term-emoji" id="term-emoji" aria-hidden="true"></div>
+            <h3 id="term-name"></h3>
+            <section class="term-sec"><span class="term-k">По-умному</span><p id="term-formal"></p></section>
+            <section class="term-sec fun"><span class="term-k">На пальцах 🤹</span><p id="term-funny"></p></section>
+            <section class="term-sec mn"><span class="term-k">Запомни</span><p id="term-mnemo"></p></section>
+          </article>
         </div>
       </section>
     </div>
