@@ -628,7 +628,7 @@ function makeNameTexture(text) {
 }
 function buildNames(ship, shellMats) {
   const mat = new THREE.MeshBasicMaterial({
-    map: makeNameTexture('ATLAS'), transparent: true, depthWrite: false,
+    map: makeNameTexture('DASHULYA'), transparent: true, depthWrite: false,
     polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
   });
   mat.userData.shell = true;
