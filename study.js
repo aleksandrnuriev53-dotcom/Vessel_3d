@@ -1,37 +1,46 @@
 /* ============================================================================
    study.js — логика раздела «Шпаргалки» для 3D-атласа судна
    ----------------------------------------------------------------------------
-   Контент лежит в study-data.js. Здесь:
-     1. чистые функции отображения (их можно проверять в Node);
-     2. прогресс «знаю / трудный» (localStorage + Telegram CloudStorage);
-     3. initStudy — панель: темы, словарь, тренировка, слоистая карточка термина
-        («Простыми словами» → «Образ из жизни» → «На корабле» → «По-научному»
-        → «Не путай с…» → «Запомни») и кнопка «Не понял — иначе».
+   Новая иерархия: Учебник -> Глава -> Тема.
    ============================================================================ */
 
 import { studyData } from './study-data.js';
 export { studyData };
 
 /* ============================================================================
-   1. ЧИСТЫЕ ФУНКЦИИ
+   1. ЧИСТЫЕ ФУНКЦИИ И ИНДЕКСАЦИЯ
    ============================================================================ */
 
-const esc = (s) =>
-  String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const norm = (s) => String(s).toLowerCase().replace(/ё/g, 'е');
 
-/** Индекс терминов: id → { term, topic } */
-export function buildTermIndex(data = studyData) {
-  const idx = {};
-  data.topics.forEach((topic) => topic.terms.forEach((term) => { idx[term.id] = { term, topic }; }));
-  return idx;
+/** Распаковка глубокой структуры (Учебник -> Глава -> Тема) в плоские индексы для поиска и тренировки */
+export function buildIndices(data = studyData) {
+  const topics = [];
+  const termIdx = {};
+  data.books.forEach((b) => {
+    b.chapters.forEach((c) => {
+      c.topics.forEach((t) => {
+        t._book = b;
+        t._chapter = c;
+        topics.push(t);
+        if (t.terms) {
+          t.terms.forEach((term) => {
+            termIdx[term.id] = { term, topic: t };
+          });
+        }
+      });
+    });
+  });
+  return { topics, termIdx };
 }
 
 /** Все варианты «образа из жизни»: основной + запасные («Не понял — иначе») */
-export const termVariants = (term) => [term.funny, ...(term.again || [])];
+export const termVariants = (term) => [term.funny, ...(term.again || [])].filter(Boolean);
 
 /** Строка с разметкой → безопасный HTML: **жирный** и {{id}} → кнопка-термин */
 export function richText(str, index) {
+  if (!str) return '';
   return esc(str)
     .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
     .replace(/\{\{(\w+)\}\}/g, (m, id) => {
@@ -42,25 +51,53 @@ export function richText(str, index) {
     });
 }
 
-/** HTML темы: «за 10 секунд», формулы, факты, чипы терминов, источник */
-export function renderTopic(topic, index, statusOf = () => 'new') {
-  const formulas = topic.formulas.length
+/** Рендер Оглавления (список учебников и тем) */
+export function renderTOC(data, progress) {
+  return `<div class="toc-wrap">` + data.books.map(b => `
+    <div class="toc-book">
+      <div class="toc-b-head"><i>${b.icon}</i><div><b>${esc(b.title)}</b><small>${esc(b.author)}</small></div></div>
+      ${b.chapters.map(c => `
+        <div class="toc-chap">
+          <div class="toc-c-title">${esc(c.title)}</div>
+          <div class="toc-topics">
+            ${c.topics.map(t => {
+               const terms = t.terms || [];
+               const known = terms.filter(x => progress.status(x.id) === 'known').length;
+               const tot = terms.length;
+               const pct = tot ? Math.round((known / tot) * 100) : 0;
+               return `<button type="button" class="toc-btn" data-topic="${t.id}">
+                 <span class="toc-t-name">${esc(t.short)}</span>
+                 <span class="toc-t-prog">${pct}%</span>
+               </button>`;
+            }).join('')}
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `).join('') + `</div>`;
+}
+
+/** Рендер конкретной Темы (открывается из Оглавления) */
+export function renderTopicView(topic, index, statusOf = () => 'new') {
+  const formulas = topic.formulas && topic.formulas.length
     ? `<h3 class="s-h">Формулы</h3><div class="s-formulas">${topic.formulas
         .map((x) => `<div class="s-formula"><code>${esc(x.f)}</code><span>${esc(x.note)}</span></div>`)
         .join('')}</div>`
     : '';
-  const facts = topic.facts.map((t) => `<li>${richText(t, index)}</li>`).join('');
+  const facts = topic.facts ? topic.facts.map((t) => `<li>${richText(t, index)}</li>`).join('') : '';
   const chips = topic.terms
-    .map((t) => `<button type="button" class="term-chip" data-term="${t.id}" data-st="${statusOf(t.id)}"><i>${t.emoji}</i>${esc(t.name)}</button>`)
-    .join('');
+    ? topic.terms.map((t) => `<button type="button" class="term-chip" data-term="${t.id}" data-st="${statusOf(t.id)}"><i>${t.emoji}</i>${esc(t.name)}</button>`).join('')
+    : '';
   return `
+    <button type="button" class="ghost-btn back-to-toc" data-act="back-toc">‹ Оглавление</button>
+    <h2 class="s-main-title">${topic.icon} ${esc(topic.title)}</h2>
+    <p class="s-src">📖 ${esc(topic._book.title)} · ${esc(topic._chapter.title)}</p>
     <div class="s-quick"><b>⚡ За 10 секунд</b>${esc(topic.quick)}</div>
     ${formulas}
     <h3 class="s-h">Факты</h3>
     <ul class="s-facts">${facts}</ul>
     <h3 class="s-h">Сложные термины <small>нажми — объясню простыми словами</small></h3>
-    <div class="s-terms">${chips}</div>
-    <p class="s-src">📖 ${esc(topic.book)}</p>`;
+    <div class="s-terms">${chips}</div>`;
 }
 
 /** Блок «Образ из жизни» (вариант vi из списка) */
@@ -85,17 +122,17 @@ export function renderTermCard(term, vi, index, status = 'new') {
     })
     .join('');
   return `
-    <div class="term-emoji" aria-hidden="true">${term.emoji}</div>
+    <div class="term-emoji" aria-hidden="true">${term.emoji || '⚓'}</div>
     <h3 id="term-name">${esc(term.name)}${badge}</h3>
     <section class="term-sec lv1"><span class="term-k">Простыми словами</span><p>${richText(term.simple, index)}</p></section>
-    <section class="term-sec fun" id="term-fun">${funInner(term, vi, index)}</section>
-    <details class="term-det"><summary>⚓ На корабле</summary><p>${richText(term.onship, index)}</p></details>
+    ${term.funny ? `<section class="term-sec fun" id="term-fun">${funInner(term, vi, index)}</section>` : ''}
+    ${term.onship ? `<details class="term-det"><summary>⚓ На корабле</summary><p>${richText(term.onship, index)}</p></details>` : ''}
     <details class="term-det"><summary>🎓 По-научному</summary><p>${richText(term.formal, index)}</p></details>
     ${mix ? `<details class="term-det"><summary>🔀 Не путай с…</summary><ul>${mix}</ul></details>` : ''}
-    <section class="term-sec mn"><span class="term-k">Запомни</span><p>${richText(term.mnemo, index)}</p></section>`;
+    ${term.mnemo ? `<section class="term-sec mn"><span class="term-k">Запомни</span><p>${richText(term.mnemo, index)}</p></section>` : ''}`;
 }
 
-/** Каркас вкладки «Словарь» (поиск + фильтры); список наполняется отдельно */
+/** Каркас вкладки «Словарь» (поиск + фильтры) */
 export function renderGlossaryShell(query, filter) {
   const f = (id, label) =>
     `<button type="button" class="g-chip${filter === id ? ' active' : ''}" data-filter="${id}">${label}</button>`;
@@ -108,36 +145,26 @@ export function renderGlossaryShell(query, filter) {
     <div class="g-list" id="g-list"></div>`;
 }
 
-/** Список терминов словаря: поиск по названию и «простым словам», фильтр по статусу */
+/** Список терминов словаря */
 export function renderGlossaryList(index, statusOf, query = '', filter = 'all') {
   const q = norm(query.trim());
-  const all = Object.values(index).map(({ term }) => term)
-    .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+  const all = Object.values(index).map(({ term }) => term).sort((a, b) => a.name.localeCompare(b.name, 'ru'));
   const shown = all.filter((t) => {
     if (filter !== 'all' && statusOf(t.id) !== filter) return false;
-    return !q || norm(t.name).includes(q) || norm(t.simple).includes(q);
+    return !q || norm(t.name).includes(q) || (t.simple && norm(t.simple).includes(q));
   });
   const html = shown.length
     ? shown.map((t) => `
         <button type="button" class="g-row" data-term="${t.id}" data-st="${statusOf(t.id)}">
-          <span class="g-ic">${t.emoji}</span>
-          <span class="g-tx"><b>${esc(t.name)}</b><small>${esc(t.simple)}</small></span>
+          <span class="g-ic">${t.emoji || '⚓'}</span>
+          <span class="g-tx"><b>${esc(t.name)}</b><small>${esc(t.simple || t.formal)}</small></span>
           <i class="g-dot" aria-hidden="true"></i>
         </button>`).join('')
     : '<p class="g-empty">Ничего не нашлось. Попробуй другое слово.</p>';
-  return {
-    html,
-    shown: shown.length,
-    total: all.length,
-    known: all.filter((t) => statusOf(t.id) === 'known').length,
-    hard: all.filter((t) => statusOf(t.id) === 'hard').length,
-  };
+  return { html, shown: shown.length, total: all.length, known: all.filter((t) => statusOf(t.id) === 'known').length, hard: all.filter((t) => statusOf(t.id) === 'hard').length };
 }
 
-/**
- * Следующий вопрос тренировки: «трудные» выпадают чаще, «новые» — средне, «знаю» — реже.
- * Возвращает { answer, options[] } (id терминов); варианты ответа берём из той же темы.
- */
+/** Тренировка */
 export function pickQuestion(index, statusOf, rng = Math.random, lastId = null) {
   const W = { hard: 4, new: 2, known: 1 };
   const all = Object.entries(index).map(([id, v]) => ({ id, topicId: v.topic.id }));
@@ -159,9 +186,7 @@ export function pickQuestion(index, statusOf, rng = Math.random, lastId = null) 
 }
 
 /* ============================================================================
-   2. ПРОГРЕСС: «знаю» / «трудный» (localStorage + Telegram CloudStorage)
-   Формат в хранилище: {"k":[id…],"h":[id…],"o":{id:n},"t":время}. CloudStorage
-   принимает до 4096 символов на ключ — этого хватает на несколько сотен терминов.
+   2. ПРОГРЕСС (localStorage + CloudStorage)
    ============================================================================ */
 const PKEY = 'atlas.study.progress';
 
@@ -174,36 +199,35 @@ export function createProgress(tg, onRemote) {
   };
   const pack = () => JSON.stringify({ k: Object.keys(s.k), h: Object.keys(s.h), o: s.o, t: s.t });
 
-  try { const local = parse(localStorage.getItem(PKEY)); if (local) s = local; } catch (e) { /* нет localStorage */ }
+  try { const local = parse(localStorage.getItem(PKEY)); if (local) s = local; } catch (e) {}
 
   let cloud = null;
-  try { if (tg && tg.CloudStorage && tg.isVersionAtLeast && tg.isVersionAtLeast('6.9')) cloud = tg.CloudStorage; } catch (e) { /* старый клиент */ }
+  try { if (tg && tg.CloudStorage && tg.isVersionAtLeast && tg.isVersionAtLeast('6.9')) cloud = tg.CloudStorage; } catch (e) {}
   if (cloud) {
     try {
-      cloud.getItem(PKEY, (err, val) => {              // прогресс «ходит» за аккаунтом между устройствами
+      cloud.getItem(PKEY, (err, val) => {
         if (err || !val) return;
         const c = parse(val);
         if (c && c.t > s.t) {
           s = c;
-          try { localStorage.setItem(PKEY, val); } catch (e) { /* без локальной копии */ }
+          try { localStorage.setItem(PKEY, val); } catch (e) {}
           onRemote && onRemote();
         }
       });
-    } catch (e) { /* облако недоступно */ }
+    } catch (e) {}
   }
 
   function save() {
     s.t = Date.now();
     const raw = pack();
-    try { localStorage.setItem(PKEY, raw); } catch (e) { /* без локальной копии */ }
-    try { cloud && cloud.setItem(PKEY, raw, () => {}); } catch (e) { /* без облака */ }
+    try { localStorage.setItem(PKEY, raw); } catch (e) {}
+    try { cloud && cloud.setItem(PKEY, raw, () => {}); } catch (e) {}
   }
 
   return {
     status: (id) => (s.h[id] ? 'hard' : s.k[id] ? 'known' : 'new'),
     markKnown(id) { s.k[id] = 1; delete s.h[id]; save(); },
     markHard(id) { s.h[id] = 1; delete s.k[id]; delete s.o[id]; save(); },
-    /** Ответ в тренировке: «знаю» ставим только после двух верных ответов подряд (чтобы не засчитать угадывание) */
     answer(id, ok) {
       if (ok) {
         s.o[id] = (s.o[id] || 0) + 1;
@@ -215,8 +239,7 @@ export function createProgress(tg, onRemote) {
 }
 
 /* ============================================================================
-   3. ПАНЕЛЬ
-   hooks: { onOpen, onClose, haptic, tg }
+   3. ПАНЕЛЬ И ЛОГИКА
    ============================================================================ */
 export function initStudy(hooks = {}) {
   const $ = (s) => document.querySelector(s);
@@ -236,27 +259,28 @@ export function initStudy(hooks = {}) {
   const termContent = $('#term-content');
   const termBack = $('#term-back');
 
-  const topics = studyData.topics;
-  const index = buildTermIndex();
-  const buzz = (k) => { try { hooks.haptic && hooks.haptic(k); } catch (e) { /* без вибрации */ } };
+  const indices = buildIndices();
+  const index = indices.termIdx;
+  const allTopics = indices.topics;
+  const buzz = (k) => { try { hooks.haptic && hooks.haptic(k); } catch (e) {} };
 
-  /* ---------- Страницы: темы + «Словарь» + «Тренировка» ---------- */
+  /* ---------- Страницы ---------- */
   const pages = [
-    ...topics.map((t) => ({ type: 'topic', topic: t, short: t.short, icon: t.icon })),
-    { type: 'glossary', short: 'Словарь', icon: '📚' },
-    { type: 'training', short: 'Тренировка', icon: '🎯' },
+    { id: 'toc', short: 'Учебники', icon: '📚' },
+    { id: 'glossary', short: 'Словарь', icon: '📖' },
+    { id: 'training', short: 'Тренировка', icon: '🎯' },
   ];
 
-  const progress = createProgress(hooks.tg, () => { syncStatus(); if (pages[cur].type === 'glossary') updateGlossary(); });
+  const progress = createProgress(hooks.tg, () => { syncStatus(); if (pages[cur].id === 'glossary') updateGlossary(); });
   const KEY = 'atlas.study.page';
   let cur = 0;
+  let activeTopicId = null; // если null — показываем Оглавление, если есть ID — показываем саму Тему
   let isOpen = false;
   try {
     const saved = parseInt(localStorage.getItem(KEY), 10);
     if (saved >= 0 && saved < pages.length) cur = saved;
-  } catch (e) { /* ничего страшного */ }
+  } catch (e) {}
 
-  /* ---------- Шапка и вкладки ---------- */
   $('#study-title').textContent = studyData.meta.title;
   $('#study-sub').textContent = studyData.meta.subtitle;
   $('#study-disc').textContent = studyData.meta.disclaimer;
@@ -265,13 +289,23 @@ export function initStudy(hooks = {}) {
     .join('');
   dotsEl.innerHTML = pages.map(() => '<span></span>').join('');
 
-  /* ---------- Состояние словаря и тренировки ---------- */
   const g = { q: '', f: 'all' };
   const tr = { asked: 0, right: 0, streak: 0, q: null, answered: false, last: null };
 
-  /** Обновить цветные точки статуса у чипов и строк словаря без перерисовки страницы */
   function syncStatus() {
     contentEl.querySelectorAll('[data-term][data-st]').forEach((el) => { el.dataset.st = progress.status(el.dataset.term); });
+    // Обновляем проценты в Оглавлении, если оно открыто
+    if (pages[cur].id === 'toc' && !activeTopicId) {
+      contentEl.querySelectorAll('.toc-btn').forEach((btn) => {
+         const tId = btn.dataset.topic;
+         const t = allTopics.find(x => x.id === tId);
+         if (t && t.terms) {
+           const known = t.terms.filter(x => progress.status(x.id) === 'known').length;
+           const pct = t.terms.length ? Math.round((known / t.terms.length) * 100) : 0;
+           btn.querySelector('.toc-t-prog').textContent = pct + '%';
+         }
+      });
+    }
   }
 
   function updateGlossary() {
@@ -290,7 +324,7 @@ export function initStudy(hooks = {}) {
       .join('');
     contentEl.innerHTML = `
       <div class="tr-stats" id="tr-stats"></div>
-      <div class="tr-card"><span class="tr-k">Что это за термин?</span><p class="tr-q">${esc(term.simple)}</p></div>
+      <div class="tr-card"><span class="tr-k">Что это за термин?</span><p class="tr-q">${esc(term.simple || term.formal)}</p></div>
       <div class="tr-opts">${opts}</div>
       <div class="tr-fb" id="tr-fb" aria-live="polite"></div>
       <p class="tr-hint">Неверные ответы попадают в «Трудные» и выпадают чаще. «Знаю» ставится после двух верных ответов подряд.</p>`;
@@ -316,7 +350,7 @@ export function initStudy(hooks = {}) {
     const t = index[correct].term;
     $('#tr-fb').innerHTML = `
       <div class="tr-res ${ok ? 'ok' : 'bad'}">${ok ? '✅ Верно!' : `❌ Это «${esc(t.name)}»`}</div>
-      <p class="tr-explain">${richText(t.funny, index)}</p>
+      ${t.funny ? `<p class="tr-explain">${richText(t.funny, index)}</p>` : ''}
       <div class="tr-btns">
         <button type="button" class="ghost-btn" data-term="${correct}">Открыть карточку</button>
         <button type="button" class="ghost-btn primary" data-act="tr-next">Дальше →</button>
@@ -329,10 +363,17 @@ export function initStudy(hooks = {}) {
   function show(i, dir) {
     cur = (i + pages.length) % pages.length;
     const page = pages[cur];
-    if (page.type === 'topic') {
-      contentEl.innerHTML = renderTopic(page.topic, index, progress.status);
-      contentEl.setAttribute('aria-label', page.topic.title);
-    } else if (page.type === 'glossary') {
+    
+    if (page.id === 'toc') {
+      if (activeTopicId) {
+        const t = allTopics.find(x => x.id === activeTopicId);
+        contentEl.innerHTML = renderTopicView(t, index, progress.status);
+        contentEl.setAttribute('aria-label', t.title);
+      } else {
+        contentEl.innerHTML = renderTOC(studyData, progress);
+        contentEl.setAttribute('aria-label', 'Оглавление учебников');
+      }
+    } else if (page.id === 'glossary') {
       contentEl.innerHTML = renderGlossaryShell(g.q, g.f);
       contentEl.setAttribute('aria-label', 'Словарь терминов');
       updateGlossary();
@@ -342,10 +383,9 @@ export function initStudy(hooks = {}) {
     }
     bodyEl.scrollTop = 0;
 
-    // Анимация «листания»: новая страница въезжает с той стороны, куда листаем
     contentEl.classList.remove('from-right', 'from-left');
     if (dir) {
-      void contentEl.offsetWidth;                          // перезапуск CSS-анимации
+      void contentEl.offsetWidth;
       contentEl.classList.add(dir > 0 ? 'from-right' : 'from-left');
     }
 
@@ -358,21 +398,36 @@ export function initStudy(hooks = {}) {
     [...dotsEl.children].forEach((d, k) => d.classList.toggle('on', k === cur));
     prevBtn.textContent = '‹ ' + pages[(cur - 1 + pages.length) % pages.length].short;
     nextBtn.textContent = pages[(cur + 1) % pages.length].short + ' ›';
-    try { localStorage.setItem(KEY, String(cur)); } catch (e) { /* без сохранения */ }
+    try { localStorage.setItem(KEY, String(cur)); } catch (e) {}
   }
-  const go = (dir) => { show(cur + dir, dir); buzz('light'); };
+  const go = (dir) => { activeTopicId = null; show(cur + dir, dir); buzz('light'); };
 
   tabsEl.addEventListener('click', (e) => {
     const b = e.target.closest('.study-tab');
     if (!b) return;
     const i = +b.dataset.i;
-    if (i !== cur) { show(i, i > cur ? 1 : -1); buzz('light'); }
+    if (i !== cur) { activeTopicId = null; show(i, i > cur ? 1 : -1); buzz('light'); }
   });
   prevBtn.addEventListener('click', () => go(-1));
   nextBtn.addEventListener('click', () => go(1));
 
-  // Делегирование кликов внутри страницы: термины, фильтры словаря, тренировка
   bodyEl.addEventListener('click', (e) => {
+    // Клик по теме в оглавлении
+    const btnToc = e.target.closest('[data-topic]');
+    if (btnToc) {
+      activeTopicId = btnToc.dataset.topic;
+      show(0, 1);
+      buzz('light');
+      return;
+    }
+    // Кнопка "Назад к оглавлению" внутри темы
+    if (e.target.closest('[data-act="back-toc"]')) {
+      activeTopicId = null;
+      show(0, -1);
+      buzz('light');
+      return;
+    }
+    
     const termEl = e.target.closest('[data-term]');
     if (termEl) { openTerm(termEl.dataset.term); return; }
     const filt = e.target.closest('[data-filter]');
@@ -395,7 +450,6 @@ export function initStudy(hooks = {}) {
     if (e.target.id === 'g-q') { g.q = e.target.value; updateGlossary(); }
   });
 
-  // Свайп влево/вправо по содержимому — соседняя страница
   let sx = 0, sy = 0, st = 0;
   bodyEl.addEventListener('touchstart', (e) => {
     const t = e.touches[0]; sx = t.clientX; sy = t.clientY; st = Date.now();
@@ -408,8 +462,8 @@ export function initStudy(hooks = {}) {
   }, { passive: true });
 
   /* ---------- Карточка термина ---------- */
-  let termStack = [];            // история переходов между терминами («Не путай с…»)
-  let termVar = 0;               // какой вариант «образа из жизни» показан сейчас
+  let termStack = [];
+  let termVar = 0;
   const curId = () => termStack[termStack.length - 1];
 
   function renderTerm(keepDetails) {
@@ -436,15 +490,15 @@ export function initStudy(hooks = {}) {
     termLayer.classList.remove('open');
     termLayer.setAttribute('aria-hidden', 'true');
     syncStatus();
-    if (pages[cur].type === 'glossary') updateGlossary();   // статус мог поменяться — фильтр «Трудные»/«Знаю»
+    if (pages[cur].id === 'glossary') updateGlossary();
     buzz('light');
   }
-  function stepBack() {          // «Назад»: на предыдущий термин, а если он первый — закрыть карточку
+  function stepBack() {
     if (termStack.length > 1) { termStack.pop(); termVar = 0; renderTerm(false); termContent.scrollTop = 0; buzz('light'); }
     else closeTerm();
   }
 
-  termContent.addEventListener('click', (e) => {              // переход по ссылкам внутри карточки
+  termContent.addEventListener('click', (e) => {
     const el = e.target.closest('[data-term]');
     if (el) openTerm(el.dataset.term);
   });
@@ -452,19 +506,21 @@ export function initStudy(hooks = {}) {
   $('#term-close').addEventListener('click', closeTerm);
   $('#term-veil').addEventListener('click', closeTerm);
 
-  // «Не понял — иначе»: помечаем термин трудным и показываем другой образ
   $('#term-hard').addEventListener('click', () => {
     const id = curId();
     if (!id) return;
     progress.markHard(id);
-    termVar = (termVar + 1) % termVariants(index[id].term).length;
-    renderTerm(true);
-    const fun = $('#term-fun');
-    fun.classList.remove('flash'); void fun.offsetWidth; fun.classList.add('flash');
-    fun.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    const variants = termVariants(index[id].term);
+    if (variants.length > 1) {
+      termVar = (termVar + 1) % variants.length;
+      renderTerm(true);
+      const fun = $('#term-fun');
+      if (fun) { fun.classList.remove('flash'); void fun.offsetWidth; fun.classList.add('flash'); fun.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
+    } else {
+      renderTerm(true);
+    }
     buzz('medium');
   });
-  // «Понял»: отмечаем термин изученным и закрываем карточку
   $('#term-ok').addEventListener('click', () => {
     const id = curId();
     if (id) progress.markKnown(id);
@@ -477,13 +533,13 @@ export function initStudy(hooks = {}) {
   function open() {
     if (isOpen) return;
     isOpen = true;
-    hooks.onOpen && hooks.onOpen();                         // script.js: закрыть карточку метки, заморозить рендер
+    hooks.onOpen && hooks.onOpen();
     show(cur, 0);
-    document.body.classList.add('study-open');             // CSS: блюр 3D-фона + скрытие остального UI
+    document.body.classList.add('study-open');
     root.classList.add('open');
     root.setAttribute('aria-hidden', 'false');
     btnOpen.setAttribute('aria-expanded', 'true');
-    try { tgBack && tgBack.show(); } catch (e) { /* старый клиент */ }
+    try { tgBack && tgBack.show(); } catch (e) {}
     buzz('medium');
     setTimeout(() => { if (isOpen) closeBtn.focus({ preventScroll: true }); }, 400);
   }
@@ -495,7 +551,7 @@ export function initStudy(hooks = {}) {
     root.classList.remove('open');
     root.setAttribute('aria-hidden', 'true');
     btnOpen.setAttribute('aria-expanded', 'false');
-    try { tgBack && tgBack.hide(); } catch (e) { /* старый клиент */ }
+    try { tgBack && tgBack.hide(); } catch (e) {}
     hooks.onClose && hooks.onClose();
     buzz('light');
     btnOpen.focus({ preventScroll: true });
@@ -505,21 +561,28 @@ export function initStudy(hooks = {}) {
   closeBtn.addEventListener('click', close);
   veil.addEventListener('click', () => { if (!termStack.length) close(); });
 
-  // Кнопка «Назад» в Telegram: шаг назад по терминам, потом закрытие карточки, потом панели
   try {
-    tgBack && tgBack.onClick(() => { if (!isOpen) return; termStack.length ? stepBack() : close(); });
-  } catch (e) { /* старый клиент */ }
+    tgBack && tgBack.onClick(() => {
+      if (!isOpen) return;
+      if (termStack.length) { stepBack(); return; }
+      if (activeTopicId) { activeTopicId = null; show(0, -1); return; }
+      close();
+    });
+  } catch (e) {}
 
   window.addEventListener('keydown', (e) => {
     if (!isOpen) return;
-    if (e.key === 'Escape') { termStack.length ? stepBack() : close(); }
+    if (e.key === 'Escape') { 
+      if (termStack.length) stepBack(); 
+      else if (activeTopicId) { activeTopicId = null; show(0, -1); }
+      else close();
+    }
     else if (!termStack.length && !e.target.closest('input')) {
       if (e.key === 'ArrowRight') go(1);
       else if (e.key === 'ArrowLeft') go(-1);
     }
   });
 
-  // Свайп шторки вниз за «ручку» и шапку — закрыть
   let drag = null;
   ['#study-grab', '#study-head'].forEach((sel) => {
     const h = $(sel);
@@ -546,6 +609,6 @@ export function initStudy(hooks = {}) {
     h.addEventListener('pointercancel', end);
   });
 
-  show(cur, 0);                                            // первичная отрисовка (панель скрыта)
+  show(cur, 0);
   return { open, close, show, openTerm };
 }
