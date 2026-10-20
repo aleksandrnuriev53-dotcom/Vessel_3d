@@ -163,16 +163,23 @@
         <div id="term-layer" class="term-layer" aria-hidden="true">
           <div class="term-veil" id="term-veil"></div>
           <article class="term-card" role="dialog" aria-labelledby="term-name">
+            <button class="icon-btn term-back" id="term-back" aria-label="Назад к предыдущему термину" hidden>
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M15 5l-7 7 7 7"/>
+              </svg>
+            </button>
             <button class="icon-btn term-x" id="term-close" aria-label="Закрыть термин">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
                 <path d="M6 6l12 12M18 6L6 18"/>
               </svg>
             </button>
-            <div class="term-emoji" id="term-emoji" aria-hidden="true"></div>
-            <h3 id="term-name"></h3>
-            <section class="term-sec"><span class="term-k">По-умному</span><p id="term-formal"></p></section>
-            <section class="term-sec fun"><span class="term-k">На пальцах 🤹</span><p id="term-funny"></p></section>
-            <section class="term-sec mn"><span class="term-k">Запомни</span><p id="term-mnemo"></p></section>
+            <!-- Слоистое содержимое термина рисует study.js -->
+            <div id="term-content"></div>
+
+            <div class="term-actions">
+              <button type="button" id="term-hard" class="act hard">🤷 Не понял — иначе</button>
+              <button type="button" id="term-ok" class="act ok">✅ Понял</button>
+            </div>
           </article>
         </div>
       </section>
