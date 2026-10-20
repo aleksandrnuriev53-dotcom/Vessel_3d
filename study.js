@@ -1,292 +1,24 @@
 /* ============================================================================
-   study.js — раздел «Шпаргалки» для 3D-атласа судна
+   study.js — логика раздела «Шпаргалки» для 3D-атласа судна
    ----------------------------------------------------------------------------
-   Содержит:
-     1. studyData  — контент (темы: формулы, факты, «страшные» термины
-                     с объяснениями на пальцах);
-     2. initStudy  — логика панели: открытие/закрытие, навигация по темам
-                     (вкладки, кнопки, свайп, стрелки), всплывающие карточки
-                     терминов.
-   Источники контента: Дмитриев («Навигация и лоция»), Фрид («Устройство судов»),
-   Снопков («Управление судном»). Это сжатая выжимка общепринятых положений:
-   числа-ориентиры (особенно в «Управлении») сверяйте со своим изданием.
-
-   Разметка в строках:   **жирный**    {{id}} — кликабельный термин (id из terms).
+   Контент лежит в study-data.js. Здесь:
+     1. чистые функции отображения (их можно проверять в Node);
+     2. прогресс «знаю / трудный» (localStorage + Telegram CloudStorage);
+     3. initStudy — панель: темы, словарь, тренировка, слоистая карточка термина
+        («Простыми словами» → «Образ из жизни» → «На корабле» → «По-научному»
+        → «Не путай с…» → «Запомни») и кнопка «Не понял — иначе».
    ============================================================================ */
 
-export const studyData = {
-  meta: {
-    title: 'Шпаргалки',
-    subtitle: 'Дашуле на зачёт · 4 темы',
-    disclaimer:
-      'Сжатая выжимка по учебникам: Дмитриев, Фрид, Снопков. Числа-ориентиры сверяй со своим изданием и требованиями преподавателя.',
-  },
-
-  topics: [
-    /* ====================================================================
-       ТЕМА 1. НАВИГАЦИЯ (Дмитриев)
-       ==================================================================== */
-    {
-      id: 'nav',
-      icon: '🧭',
-      title: 'Навигация: курсы и счисление',
-      short: 'Навигация',
-      book: 'Дмитриев · «Навигация и лоция»',
-      quick: 'Курс → поправки → путь → счисление. Миля = 1852 м, узел = миля в час.',
-      formulas: [
-        { f: 'ИК = КК + ΔК', note: 'истинный курс из компасного; ΔК — поправка компаса' },
-        { f: 'ΔК = d + δ', note: 'склонение + девиация; Ost «+», West «−»' },
-        { f: 'МК = КК + δ ;  ИК = МК + d', note: 'то же по шагам: компасный → магнитный → истинный' },
-        { f: 'ПУα = ИК + α', note: 'путевой угол с дрейфом; α «+» при ветре слева (снос вправо)' },
-        { f: 'ИП = ИК + КУ', note: 'истинный пеленг = курс + курсовой угол (КУ счёт по часовой)' },
-        { f: 'S = V · t', note: 'мили = узлы × часы; при минутах: S = V·t / 60' },
-        { f: 'Dₑ = 2,08·√e', note: 'дальность видимости горизонту, мили; e — высота глаза, м' },
-        { f: 'Dₚ = 2,08·(√e + √H)', note: 'дальность видимости предмета высотой H (м)' },
-        { f: 'РШ = S·cos ПУ ;  ОТШ = S·sin ПУ ;  РД = ОТШ / cos φср', note: 'плоское плавание: разность широт, отшествие, разность долгот' },
-      ],
-      facts: [
-        '**1 миля = 1852 м** (≈ 1′ меридиана); **1 кабельтов = 0,1 мили = 185,2 м**; 1 узел = 1 миля/ч ≈ 1,852 км/ч.',
-        'Круг **360°** = **32 румба**; 1 румб = **11,25°**. Счёт: круговой, полукруговой, четвертной, румбовой.',
-        'Цепочка курсов: **КК → МК → ИК → ПУ** (+δ, +d, затем дрейф α и течение β).',
-        'Склонение d берут с карты (с поправкой на годовое изменение); {{deviation}} δ — из таблицы девиации, зависит от курса.',
-        '{{drift}}: α — ветер (угол между ИК и ПУ), β — течение. При ветре слева судно сносит **вправо**.',
-        'Линия положения (ЛП): пеленг, дистанция, горизонтальный угол, изобата. **Две ЛП** → обсервация, третья — контроль.',
-        'Счисление — прокладка по **курсу и лагу**. Невязка = расстояние между счислимой и обсервованной точками.',
-        'Коэффициент **2,08** уже учитывает рефракцию (чисто геометрический — 1,93).',
-        'Карта Меркатора равноугольная: меридианы — параллельные прямые; {{loxo}} на ней — прямая.',
-      ],
-      terms: [
-        {
-          id: 'deviation',
-          name: 'Девиация (δ)',
-          emoji: '🧲',
-          formal:
-            'Отклонение стрелки компаса от магнитного меридиана из-за намагниченного железа самого судна. Зависит от курса, судна и груза.',
-          funny:
-            'Компас — как друг на диете: честно хочет смотреть на север, но всё время косится на булку. Булка — железо судна. Чем ближе булка, тем сильнее косится. Поэтому штурман стрелке на слово не верит и сверяется с таблицей девиации — это «таблица калорийности» для компаса.',
-          mnemo: 'Склонение — вина Земли, девиация — вина судна.',
-        },
-        {
-          id: 'drift',
-          name: 'Дрейф и течение',
-          emoji: '🌬️',
-          formal:
-            'Дрейф — снос судна ветром (угол α между ИК и ПУ). Течение — снос водной массой (угол β). Оба смещают линию пути относительно курса.',
-          funny:
-            'Дрейф — это когда в метро тебя плечом толкнули: идёшь прямо, а сносит. Течение — эскалатор, который едет не туда: шагаешь вперёд, а пол уезжает вбок. В итоге «шёл на север», а пришёл за кофе в соседний порт. Штурман этого не любит и считает поправки.',
-          mnemo: 'Курс — куда смотришь, путь — куда едешь.',
-        },
-        {
-          id: 'loxo',
-          name: 'Локсодромия и ортодромия',
-          emoji: '🗺️',
-          formal:
-            'Локсодромия — линия, пересекающая меридианы под постоянным углом (постоянный курс). Ортодромия — дуга большого круга, кратчайший путь на сфере (курс меняется).',
-          funny:
-            'Локсодромия — навигатор в режиме «не сворачивай»: держишь один курс, зато едешь с запасом по расстоянию. Ортодромия — путь профи на самокате: короче, но руль подкручиваешь всё время. На карте Меркатора локсодромия — прямая, а ортодромия — дуга, и кажется, что карта врёт. Не врёт — это проекция.',
-          mnemo: 'Локсо — лень рулить, орто — короче путь.',
-        },
-      ],
-    },
-
-    /* ====================================================================
-       ТЕМА 2. УСТРОЙСТВО И ОСТОЙЧИВОСТЬ (Фрид)
-       ==================================================================== */
-    {
-      id: 'ship',
-      icon: '⚓',
-      title: 'Устройство и остойчивость',
-      short: 'Устройство',
-      book: 'Фрид · «Устройство судов»',
-      quick: 'G ниже M — судно стоит. Танки — либо «под пробку», либо «в ноль».',
-      formulas: [
-        { f: 'Δ = ρ · V', note: 'водоизмещение, т = плотность (т/м³) × объём подводной части; море ρ ≈ 1,025, пресная 1,000' },
-        { f: 'δ = V / (L · B · T)', note: 'коэффициент общей полноты Cb; чем «пухлее» корпус, тем ближе к 1 (балкер ≈ 0,8)' },
-        { f: 'DW = Δ − Δ₀', note: 'дедвейт = полное − порожнее водоизмещение (груз, топливо, запасы, экипаж)' },
-        { f: 'h = GM = KM − KG', note: 'метацентрическая высота; h > 0 — судно остойчиво' },
-        { f: 'Mв = Δ · h · sin θ', note: 'восстанавливающий момент при малых углах крена, т·м' },
-        { f: 'Δh = − ρж · iₓ / Δ', note: 'потеря h от свободной поверхности (iₓ — момент инерции площади жидкости)' },
-        { f: 'Tθ ≈ c · B / √h', note: 'период бортовой качки, c ≈ 0,75–0,8 (ориентир): больше h → качка резче' },
-        { f: 'q = ρ · Sвл / 100', note: 'т/см осадки (TPC): сколько тонн груза «топит» судно на 1 см' },
-      ],
-      facts: [
-        'Размерения: **L** длина, **B** ширина, **D** высота борта, **T** осадка; надводный борт ≈ D − T.',
-        'Нос: форштевень, бульб (гасит носовую волну). Корма: ахтерштевень, руль, винт.',
-        'Набор корпуса: **поперечный** (шпангоуты), **продольный** (стрингеры), **смешанный**. Шпация ≈ 0,6–0,9 м.',
-        'Детали: киль, флор, шпангоут, бимс, кница, стрингer, карлингс (продольная балка под палубой).',
-        '**Двойное дно** — защита при посадке на мель + балластные и топливные цистерны. Водонепроницаемые **переборки** — непотопляемость.',
-        'Обязательные переборки: таранная (форпик), ахтерпиковая и по границам машинного отделения.',
-        '{{reserve}}: объём водонепроницаемого корпуса выше ВЛ. Предел загрузки — грузовая марка: **TF, F, T, S, W, WNA**.',
-        '**G** — центр тяжести, **C** — центр величины, **M** — метацентр, **K** — киль. Остойчиво, если **G ниже M**.',
-        '{{gm}}: большая — «жёсткое» судно (качка резкая); малая — «мягкое», но опаснее.',
-        'Что роняет h: груз наверху, обледенение, {{fsc}}, расход топлива из днищевых танков.',
-        'Крен — наклон поперёк, дифферент — вдоль: **Тнос − Ткорма**, «на нос» — плюс.',
-      ],
-      terms: [
-        {
-          id: 'gm',
-          name: 'Метацентрическая высота (h)',
-          emoji: '🧹',
-          formal:
-            'Расстояние от центра тяжести G до метацентра M. Мера начальной остойчивости: при h > 0 после крена судно возвращается в вертикаль.',
-          funny:
-            'Поставь швабру на ладонь. Груз внизу (G низко) — швабра сама выпрямляется. h — запас этой «швабристости»: большой — судно упрямо встаёт обратно; ноль — швабра вверх ногами: стоит, пока не чихнёшь; отрицательный — уже лежит.',
-          mnemo: 'Центр тяжести пониже — жизнь повыше.',
-        },
-        {
-          id: 'fsc',
-          name: 'Свободные поверхности',
-          emoji: '🍲',
-          formal:
-            'Жидкость в не до конца заполненной цистерне: при крене переливается и смещает общий центр тяжести к накрененному борту, уменьшая h.',
-          funny:
-            'Неси миску супа, налитую не доверху: наклонил — суп уехал туда же и тянет дальше. Так и в танке: судно кренится, вода переливается и подталкивает ещё сильнее. «Полбака» — мелкий пакостник, поэтому штурман любит танки либо «под пробку», либо «в ноль».',
-          mnemo: 'Либо под пробку, либо в ноль.',
-        },
-        {
-          id: 'reserve',
-          name: 'Запас плавучести и грузовая марка',
-          emoji: '🛟',
-          formal:
-            'Запас плавучести — объём водонепроницаемой части корпуса выше ватерлинии. Грузовая марка (диск Плимсоля) — предельная осадка по району и сезону.',
-          funny:
-            'Запас плавучести — «свободное место в желудке»: сколько воды можно принять, не уйдя под воду. Марка Плимсоля — ремень на последнюю дырочку: больше нельзя. Зимой в Атлантике ремень туже (волны злые), в тропиках свободнее (штиль, можно ещё булочку). В пресной воде судно сидит глубже: она менее плотная и держит хуже.',
-          mnemo: 'TF — больше всего можно грузить, WNA — меньше всего.',
-        },
-      ],
-    },
-
-    /* ====================================================================
-       ТЕМА 3. УПРАВЛЕНИЕ СУДНОМ (Снопков)
-       ==================================================================== */
-    {
-      id: 'maneuver',
-      icon: '🚢',
-      title: 'Управление и маневрирование',
-      short: 'Управление',
-      book: 'Снопков · «Управление судном»',
-      quick: 'Судно — упрямый осёл: инерция огромна, винт «шалит», мелководье присасывает.',
-      formulas: [
-        { f: 'UKC = H − (T + z)', note: 'запас воды под килем: глубина − (осадка + просадка, крен, волна)' },
-        { f: 'z ≈ Cb · V² / 100', note: 'оценка просадки (squat), м; V — узлы; в узком канале примерно вдвое больше' },
-        { f: 'Dт ≤ 5 L ;  выдвиг ≤ 4,5 L', note: 'требования ИМО к циркуляции при руле 35°' },
-        { f: 'Тормозной путь ≤ 15 L', note: '«полный назад» с полного хода (ИМО); у крупных судов допускают до 20 L' },
-        { f: 'Vотн = Vцели − Vсвоя (векторно)', note: 'радиолокационная прокладка; CPA — наименьшая дистанция сближения, TCPA — время до неё' },
-      ],
-      facts: [
-        'Циркуляция, 3 фазы: **маневренная** (перекладка руля), **эволюционная**, **установившаяся**.',
-        'Характеристики: {{advance}}, прямое смещение, диаметр установившейся циркуляции. Обычно Dт ≈ 3–5 L.',
-        'На циркуляции скорость падает (≈ на 30–50 %); крен: сначала на **внутренний** борт, затем на **наружный**.',
-        '{{propwalk}}: у правого ВФШ передним ходом корма чуть вправо, **задним — корму резко влево**.',
-        'Инерция: после «стоп» большое судно идёт ещё **милями**; тормозной путь считают заранее.',
-        'Мелководье: {{squat}}, рост осадки, ухудшение управляемости. Запас под килем — по правилам порта и компании.',
-        'Банковый эффект в канале: у берега **нос отжимает, корму подсасывает**.',
-        'МППСС-72: **13** — обгон; **14** — встречные, оба **вправо**; **15** — пересечение: уступает тот, у кого другое судно **справа**.',
-        'Сигналы манёвра (пр. 34): **1** короткий — вправо; **2** — влево; **3** — задний ход; **5 коротких** — «сомневаюсь/не понимаю».',
-        'Команды рулевому: «Право/лево на борт» — до упора (35°), «Прямо руль», «Одерживай» — остановить вращение, «Так держать».',
-      ],
-      terms: [
-        {
-          id: 'advance',
-          name: 'Выдвиг и тактический диаметр',
-          emoji: '↪️',
-          formal:
-            'Выдвиг — расстояние по первоначальному курсу от начала перекладки руля до поворота на 90°. Тактический диаметр — смещение от исходной линии курса после поворота на 180°.',
-          funny:
-            'Выдвиг — «задержка на линии»: ты крутишь руль, а судно ещё несколько корпусов едет как ни в чём не бывало: «Алло, вы меня слышите?» Чем больше судно, тем дольше «загрузка». Тактический диаметр — сколько места нужно, чтобы красиво развернуться. Как автобусу в гараже: считай заранее.',
-          mnemo: 'Выдвиг — вперёд, диаметр — вбок.',
-        },
-        {
-          id: 'propwalk',
-          name: 'Боковое действие винта',
-          emoji: '🌀',
-          formal:
-            'Из-за неравномерного обтекания (нижние лопасти «давят» сильнее верхних) винт создаёт боковую силу. У правого ВФШ на заднем ходу корму уводит влево.',
-          funny:
-            'Винт — как правша, который со всей силы крутит колесо назад и невольно толкает корму влево, как телега с кривым колесом. Дал «назад» — а зад снесло. Лайфхак: швартуйся к причалу левым бортом — тогда на заднем ходу винт сам прижмёт корму к стенке.',
-          mnemo: 'Правый винт: назад — корма влево; к стенке — левым бортом.',
-        },
-        {
-          id: 'squat',
-          name: 'Просадка (squat)',
-          emoji: '🛋️',
-          formal:
-            'На ходу под килем ускоряется вода, давление падает (закон Бернулли): судно проседает, осадка растёт, иногда меняется дифферент. Растёт примерно как V².',
-          funny:
-            'Мелководье — как ковёр под диваном: вода под килем разгоняется, давление падает, и судно «присасывается» ко дну, как подросток к дивану в воскресенье. Чем быстрее, тем сильнее — причём квадратично. Поэтому «убавь ход на мелководье» — не трусость, а геометрия.',
-          mnemo: 'Скорость ×2 → просадка ×4.',
-        },
-      ],
-    },
-
-    /* ====================================================================
-       ТЕМА 4. ЕДИНИЦЫ И СКОРОСТИ (Дмитриев)
-       ==================================================================== */
-    {
-      id: "units",
-      icon: "📏",
-      title: "Единицы длины и скорости",
-      short: "Единицы",
-      book: "Дмитриев · «Навигация и лоция»",
-      quick: "Миля — 1852 м, кабельтов — 185,2 м, узел — миля в час. Минута широты = миля.",
-      formulas: [
-        { f: "S = V · t", note: "мили = узлы × часы; отсюда V = S / t и t = S / V" },
-        { f: "S = V · tмин / 60", note: "мили, если время в минутах; при V = 6 уз — 1 миля за 10 мин" },
-        { f: "Sкаб = V · tмин / 6", note: "кабельтовы за t минут; при V = 12 уз — 2 кабельтова в минуту" },
-        { f: "Vкм/ч = 1,852 · Vуз", note: "узлы → километры в час" },
-        { f: "Vм/с = 0,514 · Vуз", note: "узлы → метры в секунду (1 м/с ≈ 1,944 уз)" },
-        { f: "Sм = 1852 · Sмиль", note: "мили → метры; 1 кабельтов = 185,2 м" },
-        { f: "S = Sл · (1 + ΔЛ / 100)", note: "пройденное расстояние по лагу с поправкой; ΔЛ — в процентах" },
-        { f: "ΔЛ = (S − Sл) / Sл · 100 %", note: "поправка лага; определяют на мерной миле" },
-        { f: "1 фут = 0,3048 м ;  1 фатом = 6 фут = 1,8288 м", note: "английские меры глубин на иностранных картах" }
-      ],
-      facts: [
-        "**1 морская миля = 1852 м** (международная); ≈ 1′ дуги меридиана — отсюда и {{nmile}}.",
-        "**1 кабельтов = 0,1 мили = 185,2 м**; 10 кабельтовых = 1 миля.",
-        "Расстояния на карте Меркатора снимают по **боковой (широтной) рамке** на уровне измеряемого участка; долготная рамка для миль не годится.",
-        "{{knot}} = 1 миля/ч = **0,514 м/с** = **1,852 км/ч**. Говорить «узлов в час» нельзя.",
-        "Для прикидки: м/с ≈ узлы / 2; км/ч ≈ узлы × 2 минус 7 %.",
-        "Сухопутная миля = 1609 м; 1 морская ≈ 1,15 сухопутной. Не путать.",
-        "Глубины: на российских картах — метры, на иностранных — часто фатомы или футы; единицы указаны в заголовке карты.",
-        "{{log}} измеряет скорость и путь: гидродинамический и индукционный — относительно воды, доплеровский — относительно дна. Поправку ΔЛ определяют на **мерной миле** двумя пробегами во взаимно обратных направлениях, чтобы исключить течение.",
-        "1° = 60′, а 1′ широты = 1 миля, поэтому **1° широты = 60 миль**."
-      ],
-      terms: [
-        {
-          id: "nmile",
-          name: "Морская миля",
-          emoji: "🌍",
-          formal: "Единица длины, равная 1852 м. Исторически — длина одной минуты дуги меридиана. Не равна сухопутной миле (1609 м).",
-          funny: "Сухопутная миля — это «пройдёмся до магазина», а морская — «пройдёмся по глобусу на одну минутку дуги». Поэтому штурман меряет расстояния по боковой рамке карты, как портной сантиметром: каждая минутка широты — одна миля. Перепутаешь с сухопутной — и вместо порта придёшь к соседнему мысу.",
-          mnemo: "Минута широты = миля. Мерь по боковой рамке, не по нижней."
-        },
-        {
-          id: "knot",
-          name: "Узел",
-          emoji: "🪢",
-          formal: "Единица скорости: 1 морская миля в час = 0,514 м/с = 1,852 км/ч. Название — от лаг-линя с узлами, по которому раньше мерили ход.",
-          funny: "Раньше скорость мерили так: бросали за борт деревяшку на верёвке с узелками и считали, сколько узелков убежало, пока сыпались песочные часы. Поэтому «узел» — это уже «в час». Скажешь «двадцать узлов в час» — штурман вздрогнет, как преподаватель от слова «ихний».",
-          mnemo: "Узел — это уже «в час». Не говори «в час» второй раз."
-        },
-        {
-          id: "log",
-          name: "Лаг и поправка лага (ΔЛ)",
-          emoji: "⏱️",
-          formal: "Лаг — прибор для измерения скорости и пройденного пути судна. Поправка лага ΔЛ показывает в процентах, на сколько его показания отличаются от истинного пройденного расстояния.",
-          funny: "Лаг — это спидометр и счётчик пробега судна. Как у любого спидометра, у него свои «фантазии»: он слегка привирает. Поэтому штурман проверяет его на мерной миле и делит улов рыбака-лага на нужный коэффициент: «Ну да, ну да, ты шёл десять узлов... а на самом деле девять с половиной».",
-          mnemo: "Лаг врёт ровно на ΔЛ %: S = Sл · (1 + ΔЛ / 100)."
-        }
-      ]
-    }
-  ],
-};
+import { studyData } from './study-data.js';
+export { studyData };
 
 /* ============================================================================
-   Помощники отображения (чистые функции — их можно проверять в Node)
+   1. ЧИСТЫЕ ФУНКЦИИ
    ============================================================================ */
 
 const esc = (s) =>
   String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const norm = (s) => String(s).toLowerCase().replace(/ё/g, 'е');
 
 /** Индекс терминов: id → { term, topic } */
 export function buildTermIndex(data = studyData) {
@@ -294,6 +26,9 @@ export function buildTermIndex(data = studyData) {
   data.topics.forEach((topic) => topic.terms.forEach((term) => { idx[term.id] = { term, topic }; }));
   return idx;
 }
+
+/** Все варианты «образа из жизни»: основной + запасные («Не понял — иначе») */
+export const termVariants = (term) => [term.funny, ...(term.again || [])];
 
 /** Строка с разметкой → безопасный HTML: **жирный** и {{id}} → кнопка-термин */
 export function richText(str, index) {
@@ -307,28 +42,180 @@ export function richText(str, index) {
     });
 }
 
-/** HTML одной темы: «за 10 секунд», формулы, факты, чипы терминов, источник */
-export function renderTopic(topic, index) {
-  const formulas = topic.formulas
-    .map((x) => `<div class="s-formula"><code>${esc(x.f)}</code><span>${esc(x.note)}</span></div>`)
-    .join('');
+/** HTML темы: «за 10 секунд», формулы, факты, чипы терминов, источник */
+export function renderTopic(topic, index, statusOf = () => 'new') {
+  const formulas = topic.formulas.length
+    ? `<h3 class="s-h">Формулы</h3><div class="s-formulas">${topic.formulas
+        .map((x) => `<div class="s-formula"><code>${esc(x.f)}</code><span>${esc(x.note)}</span></div>`)
+        .join('')}</div>`
+    : '';
   const facts = topic.facts.map((t) => `<li>${richText(t, index)}</li>`).join('');
   const chips = topic.terms
-    .map((t) => `<button type="button" class="term-chip" data-term="${t.id}"><i>${t.emoji}</i>${esc(t.name)}</button>`)
+    .map((t) => `<button type="button" class="term-chip" data-term="${t.id}" data-st="${statusOf(t.id)}"><i>${t.emoji}</i>${esc(t.name)}</button>`)
     .join('');
   return `
     <div class="s-quick"><b>⚡ За 10 секунд</b>${esc(topic.quick)}</div>
-    <h3 class="s-h">Формулы</h3>
-    <div class="s-formulas">${formulas}</div>
+    ${formulas}
     <h3 class="s-h">Факты</h3>
     <ul class="s-facts">${facts}</ul>
-    <h3 class="s-h">Сложные термины <small>нажми — объясню на пальцах</small></h3>
+    <h3 class="s-h">Сложные термины <small>нажми — объясню простыми словами</small></h3>
     <div class="s-terms">${chips}</div>
     <p class="s-src">📖 ${esc(topic.book)}</p>`;
 }
 
+/** Блок «Образ из жизни» (вариант vi из списка) */
+function funInner(term, vi, index) {
+  const vs = termVariants(term);
+  const label = vi === 0 ? 'Образ из жизни' : 'Другой образ';
+  const count = vs.length > 1 ? ` · ${vi + 1}/${vs.length}` : '';
+  return `<span class="term-k">${label}${count}</span><p>${richText(vs[vi], index)}</p>`;
+}
+
+/** Слоистая карточка термина */
+export function renderTermCard(term, vi, index, status = 'new') {
+  const badge =
+    status === 'hard' ? '<span class="term-status st-hard">🤷 трудный</span>'
+    : status === 'known' ? '<span class="term-status st-known">✅ знаю</span>' : '';
+  const mix = (term.notmix || [])
+    .map((m) => {
+      const name = m.id && index[m.id]
+        ? `<button type="button" class="term-link" data-term="${m.id}">${esc(m.name)}</button>`
+        : `<b>${esc(m.name)}</b>`;
+      return `<li>${name} — ${richText(m.diff, index)}</li>`;
+    })
+    .join('');
+  return `
+    <div class="term-emoji" aria-hidden="true">${term.emoji}</div>
+    <h3 id="term-name">${esc(term.name)}${badge}</h3>
+    <section class="term-sec lv1"><span class="term-k">Простыми словами</span><p>${richText(term.simple, index)}</p></section>
+    <section class="term-sec fun" id="term-fun">${funInner(term, vi, index)}</section>
+    <details class="term-det"><summary>⚓ На корабле</summary><p>${richText(term.onship, index)}</p></details>
+    <details class="term-det"><summary>🎓 По-научному</summary><p>${richText(term.formal, index)}</p></details>
+    ${mix ? `<details class="term-det"><summary>🔀 Не путай с…</summary><ul>${mix}</ul></details>` : ''}
+    <section class="term-sec mn"><span class="term-k">Запомни</span><p>${richText(term.mnemo, index)}</p></section>`;
+}
+
+/** Каркас вкладки «Словарь» (поиск + фильтры); список наполняется отдельно */
+export function renderGlossaryShell(query, filter) {
+  const f = (id, label) =>
+    `<button type="button" class="g-chip${filter === id ? ' active' : ''}" data-filter="${id}">${label}</button>`;
+  return `
+    <div class="g-top">
+      <input id="g-q" class="g-search" type="search" placeholder="Найти термин…" autocomplete="off" value="${esc(query)}" aria-label="Поиск по словарю">
+      <div class="g-filters">${f('all', 'Все')}${f('hard', '🤷 Трудные')}${f('new', '🆕 Новые')}${f('known', '✅ Знаю')}</div>
+    </div>
+    <p class="g-count" id="g-count"></p>
+    <div class="g-list" id="g-list"></div>`;
+}
+
+/** Список терминов словаря: поиск по названию и «простым словам», фильтр по статусу */
+export function renderGlossaryList(index, statusOf, query = '', filter = 'all') {
+  const q = norm(query.trim());
+  const all = Object.values(index).map(({ term }) => term)
+    .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+  const shown = all.filter((t) => {
+    if (filter !== 'all' && statusOf(t.id) !== filter) return false;
+    return !q || norm(t.name).includes(q) || norm(t.simple).includes(q);
+  });
+  const html = shown.length
+    ? shown.map((t) => `
+        <button type="button" class="g-row" data-term="${t.id}" data-st="${statusOf(t.id)}">
+          <span class="g-ic">${t.emoji}</span>
+          <span class="g-tx"><b>${esc(t.name)}</b><small>${esc(t.simple)}</small></span>
+          <i class="g-dot" aria-hidden="true"></i>
+        </button>`).join('')
+    : '<p class="g-empty">Ничего не нашлось. Попробуй другое слово.</p>';
+  return {
+    html,
+    shown: shown.length,
+    total: all.length,
+    known: all.filter((t) => statusOf(t.id) === 'known').length,
+    hard: all.filter((t) => statusOf(t.id) === 'hard').length,
+  };
+}
+
+/**
+ * Следующий вопрос тренировки: «трудные» выпадают чаще, «новые» — средне, «знаю» — реже.
+ * Возвращает { answer, options[] } (id терминов); варианты ответа берём из той же темы.
+ */
+export function pickQuestion(index, statusOf, rng = Math.random, lastId = null) {
+  const W = { hard: 4, new: 2, known: 1 };
+  const all = Object.entries(index).map(([id, v]) => ({ id, topicId: v.topic.id }));
+  const pool = all.filter((t) => t.id !== lastId);
+  const total = pool.reduce((s, t) => s + W[statusOf(t.id)], 0);
+  let r = rng() * total;
+  let ans = pool[pool.length - 1];
+  for (const t of pool) { r -= W[statusOf(t.id)]; if (r <= 0) { ans = t; break; } }
+
+  const shuffle = (a) => {
+    const x = a.slice();
+    for (let i = x.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [x[i], x[j]] = [x[j], x[i]]; }
+    return x;
+  };
+  const others = all.filter((t) => t.id !== ans.id);
+  const same = shuffle(others.filter((t) => t.topicId === ans.topicId)).slice(0, 2);
+  const rest = shuffle(others.filter((t) => !same.includes(t))).slice(0, 3 - same.length);
+  return { answer: ans.id, options: shuffle([ans, ...same, ...rest]).map((t) => t.id) };
+}
+
 /* ============================================================================
-   Логика панели
+   2. ПРОГРЕСС: «знаю» / «трудный» (localStorage + Telegram CloudStorage)
+   Формат в хранилище: {"k":[id…],"h":[id…],"o":{id:n},"t":время}. CloudStorage
+   принимает до 4096 символов на ключ — этого хватает на несколько сотен терминов.
+   ============================================================================ */
+const PKEY = 'atlas.study.progress';
+
+export function createProgress(tg, onRemote) {
+  let s = { k: {}, h: {}, o: {}, t: 0 };
+  const toMap = (a) => Object.fromEntries((a || []).map((i) => [i, 1]));
+  const parse = (raw) => {
+    try { const o = JSON.parse(raw); return o ? { k: toMap(o.k), h: toMap(o.h), o: o.o || {}, t: o.t || 0 } : null; }
+    catch (e) { return null; }
+  };
+  const pack = () => JSON.stringify({ k: Object.keys(s.k), h: Object.keys(s.h), o: s.o, t: s.t });
+
+  try { const local = parse(localStorage.getItem(PKEY)); if (local) s = local; } catch (e) { /* нет localStorage */ }
+
+  let cloud = null;
+  try { if (tg && tg.CloudStorage && tg.isVersionAtLeast && tg.isVersionAtLeast('6.9')) cloud = tg.CloudStorage; } catch (e) { /* старый клиент */ }
+  if (cloud) {
+    try {
+      cloud.getItem(PKEY, (err, val) => {              // прогресс «ходит» за аккаунтом между устройствами
+        if (err || !val) return;
+        const c = parse(val);
+        if (c && c.t > s.t) {
+          s = c;
+          try { localStorage.setItem(PKEY, val); } catch (e) { /* без локальной копии */ }
+          onRemote && onRemote();
+        }
+      });
+    } catch (e) { /* облако недоступно */ }
+  }
+
+  function save() {
+    s.t = Date.now();
+    const raw = pack();
+    try { localStorage.setItem(PKEY, raw); } catch (e) { /* без локальной копии */ }
+    try { cloud && cloud.setItem(PKEY, raw, () => {}); } catch (e) { /* без облака */ }
+  }
+
+  return {
+    status: (id) => (s.h[id] ? 'hard' : s.k[id] ? 'known' : 'new'),
+    markKnown(id) { s.k[id] = 1; delete s.h[id]; save(); },
+    markHard(id) { s.h[id] = 1; delete s.k[id]; delete s.o[id]; save(); },
+    /** Ответ в тренировке: «знаю» ставим только после двух верных ответов подряд (чтобы не засчитать угадывание) */
+    answer(id, ok) {
+      if (ok) {
+        s.o[id] = (s.o[id] || 0) + 1;
+        if (s.o[id] >= 2) { s.k[id] = 1; delete s.h[id]; }
+      } else { delete s.o[id]; s.h[id] = 1; delete s.k[id]; }
+      save();
+    },
+  };
+}
+
+/* ============================================================================
+   3. ПАНЕЛЬ
    hooks: { onOpen, onClose, haptic, tg }
    ============================================================================ */
 export function initStudy(hooks = {}) {
@@ -346,40 +233,116 @@ export function initStudy(hooks = {}) {
   const nextBtn = $('#study-next');
   const closeBtn = $('#study-close');
   const termLayer = $('#term-layer');
+  const termContent = $('#term-content');
+  const termBack = $('#term-back');
 
   const topics = studyData.topics;
   const index = buildTermIndex();
   const buzz = (k) => { try { hooks.haptic && hooks.haptic(k); } catch (e) { /* без вибрации */ } };
-  const KEY = 'atlas.study.topic';
 
+  /* ---------- Страницы: темы + «Словарь» + «Тренировка» ---------- */
+  const pages = [
+    ...topics.map((t) => ({ type: 'topic', topic: t, short: t.short, icon: t.icon })),
+    { type: 'glossary', short: 'Словарь', icon: '📚' },
+    { type: 'training', short: 'Тренировка', icon: '🎯' },
+  ];
+
+  const progress = createProgress(hooks.tg, () => { syncStatus(); if (pages[cur].type === 'glossary') updateGlossary(); });
+  const KEY = 'atlas.study.page';
   let cur = 0;
   let isOpen = false;
-  let termOpen = false;
-
-  // Запоминаем последнюю открытую тему (в Telegram localStorage может быть недоступен)
   try {
     const saved = parseInt(localStorage.getItem(KEY), 10);
-    if (saved >= 0 && saved < topics.length) cur = saved;
+    if (saved >= 0 && saved < pages.length) cur = saved;
   } catch (e) { /* ничего страшного */ }
 
   /* ---------- Шапка и вкладки ---------- */
   $('#study-title').textContent = studyData.meta.title;
   $('#study-sub').textContent = studyData.meta.subtitle;
   $('#study-disc').textContent = studyData.meta.disclaimer;
-  tabsEl.innerHTML = topics
-    .map((t, i) => `<button type="button" role="tab" class="study-tab" data-i="${i}" aria-selected="false"><i>${t.icon}</i>${esc(t.short)}</button>`)
+  tabsEl.innerHTML = pages
+    .map((p, i) => `<button type="button" role="tab" class="study-tab" data-i="${i}" aria-selected="false"><i>${p.icon}</i>${esc(p.short)}</button>`)
     .join('');
-  dotsEl.innerHTML = topics.map(() => '<span></span>').join('');
+  dotsEl.innerHTML = pages.map(() => '<span></span>').join('');
 
-  /* ---------- Показ темы ---------- */
+  /* ---------- Состояние словаря и тренировки ---------- */
+  const g = { q: '', f: 'all' };
+  const tr = { asked: 0, right: 0, streak: 0, q: null, answered: false, last: null };
+
+  /** Обновить цветные точки статуса у чипов и строк словаря без перерисовки страницы */
+  function syncStatus() {
+    contentEl.querySelectorAll('[data-term][data-st]').forEach((el) => { el.dataset.st = progress.status(el.dataset.term); });
+  }
+
+  function updateGlossary() {
+    const r = renderGlossaryList(index, progress.status, g.q, g.f);
+    const list = $('#g-list');
+    if (!list) return;
+    list.innerHTML = r.html;
+    $('#g-count').textContent = `Показано ${r.shown} из ${r.total} · знаю ${r.known} · трудных ${r.hard}`;
+  }
+
+  function renderTraining() {
+    if (!tr.q) { tr.q = pickQuestion(index, progress.status, Math.random, tr.last); tr.answered = false; }
+    const term = index[tr.q.answer].term;
+    const opts = tr.q.options
+      .map((id) => `<button type="button" class="tr-opt" data-opt="${id}">${esc(index[id].term.name)}</button>`)
+      .join('');
+    contentEl.innerHTML = `
+      <div class="tr-stats" id="tr-stats"></div>
+      <div class="tr-card"><span class="tr-k">Что это за термин?</span><p class="tr-q">${esc(term.simple)}</p></div>
+      <div class="tr-opts">${opts}</div>
+      <div class="tr-fb" id="tr-fb" aria-live="polite"></div>
+      <p class="tr-hint">Неверные ответы попадают в «Трудные» и выпадают чаще. «Знаю» ставится после двух верных ответов подряд.</p>`;
+    updateTrainingStats();
+  }
+  function updateTrainingStats() {
+    const el = $('#tr-stats');
+    if (el) el.innerHTML = `<span>Верно: <b>${tr.right}</b> из <b>${tr.asked}</b></span><span>Серия: <b>${tr.streak}</b> 🔥</span>`;
+  }
+  function answerTraining(optId) {
+    if (tr.answered || !tr.q) return;
+    tr.answered = true;
+    const correct = tr.q.answer;
+    const ok = optId === correct;
+    progress.answer(correct, ok);
+    tr.asked++;
+    if (ok) { tr.right++; tr.streak++; } else { tr.streak = 0; }
+    contentEl.querySelectorAll('.tr-opt').forEach((b) => {
+      b.disabled = true;
+      if (b.dataset.opt === correct) b.classList.add('right');
+      else if (b.dataset.opt === optId) b.classList.add('wrong');
+    });
+    const t = index[correct].term;
+    $('#tr-fb').innerHTML = `
+      <div class="tr-res ${ok ? 'ok' : 'bad'}">${ok ? '✅ Верно!' : `❌ Это «${esc(t.name)}»`}</div>
+      <p class="tr-explain">${richText(t.funny, index)}</p>
+      <div class="tr-btns">
+        <button type="button" class="ghost-btn" data-term="${correct}">Открыть карточку</button>
+        <button type="button" class="ghost-btn primary" data-act="tr-next">Дальше →</button>
+      </div>`;
+    updateTrainingStats();
+    buzz(ok ? 'light' : 'medium');
+  }
+
+  /* ---------- Показ страницы ---------- */
   function show(i, dir) {
-    cur = (i + topics.length) % topics.length;
-    const topic = topics[cur];
-    contentEl.innerHTML = renderTopic(topic, index);
-    contentEl.setAttribute('aria-label', topic.title);
+    cur = (i + pages.length) % pages.length;
+    const page = pages[cur];
+    if (page.type === 'topic') {
+      contentEl.innerHTML = renderTopic(page.topic, index, progress.status);
+      contentEl.setAttribute('aria-label', page.topic.title);
+    } else if (page.type === 'glossary') {
+      contentEl.innerHTML = renderGlossaryShell(g.q, g.f);
+      contentEl.setAttribute('aria-label', 'Словарь терминов');
+      updateGlossary();
+    } else {
+      renderTraining();
+      contentEl.setAttribute('aria-label', 'Тренировка терминов');
+    }
     bodyEl.scrollTop = 0;
 
-    // Анимация «листания»: новая тема въезжает с той стороны, куда листаем
+    // Анимация «листания»: новая страница въезжает с той стороны, куда листаем
     contentEl.classList.remove('from-right', 'from-left');
     if (dir) {
       void contentEl.offsetWidth;                          // перезапуск CSS-анимации
@@ -393,8 +356,8 @@ export function initStudy(hooks = {}) {
       if (on && b.scrollIntoView) b.scrollIntoView({ inline: 'center', block: 'nearest', behavior: dir ? 'smooth' : 'auto' });
     });
     [...dotsEl.children].forEach((d, k) => d.classList.toggle('on', k === cur));
-    prevBtn.textContent = '‹ ' + topics[(cur - 1 + topics.length) % topics.length].short;
-    nextBtn.textContent = topics[(cur + 1) % topics.length].short + ' ›';
+    prevBtn.textContent = '‹ ' + pages[(cur - 1 + pages.length) % pages.length].short;
+    nextBtn.textContent = pages[(cur + 1) % pages.length].short + ' ›';
     try { localStorage.setItem(KEY, String(cur)); } catch (e) { /* без сохранения */ }
   }
   const go = (dir) => { show(cur + dir, dir); buzz('light'); };
@@ -408,52 +371,106 @@ export function initStudy(hooks = {}) {
   prevBtn.addEventListener('click', () => go(-1));
   nextBtn.addEventListener('click', () => go(1));
 
-  // Свайп влево/вправо по содержимому — соседняя тема
+  // Делегирование кликов внутри страницы: термины, фильтры словаря, тренировка
+  bodyEl.addEventListener('click', (e) => {
+    const termEl = e.target.closest('[data-term]');
+    if (termEl) { openTerm(termEl.dataset.term); return; }
+    const filt = e.target.closest('[data-filter]');
+    if (filt) {
+      g.f = filt.dataset.filter;
+      contentEl.querySelectorAll('.g-chip').forEach((c) => c.classList.toggle('active', c === filt));
+      updateGlossary();
+      return;
+    }
+    const opt = e.target.closest('[data-opt]');
+    if (opt) { answerTraining(opt.dataset.opt); return; }
+    if (e.target.closest('[data-act="tr-next"]')) {
+      tr.last = tr.q && tr.q.answer; tr.q = null;
+      renderTraining();
+      bodyEl.scrollTop = 0;
+      buzz('light');
+    }
+  });
+  bodyEl.addEventListener('input', (e) => {
+    if (e.target.id === 'g-q') { g.q = e.target.value; updateGlossary(); }
+  });
+
+  // Свайп влево/вправо по содержимому — соседняя страница
   let sx = 0, sy = 0, st = 0;
   bodyEl.addEventListener('touchstart', (e) => {
     const t = e.touches[0]; sx = t.clientX; sy = t.clientY; st = Date.now();
   }, { passive: true });
   bodyEl.addEventListener('touchend', (e) => {
-    if (termOpen) return;
+    if (termStack.length || e.target.closest('input')) return;
     const t = e.changedTouches[0];
     const dx = t.clientX - sx, dy = t.clientY - sy;
     if (Math.abs(dx) > 70 && Math.abs(dx) > Math.abs(dy) * 1.6 && Date.now() - st < 700) go(dx < 0 ? 1 : -1);
   }, { passive: true });
 
   /* ---------- Карточка термина ---------- */
-  const T = {
-    emoji: $('#term-emoji'), name: $('#term-name'),
-    formal: $('#term-formal'), funny: $('#term-funny'), mnemo: $('#term-mnemo'),
-  };
+  let termStack = [];            // история переходов между терминами («Не путай с…»)
+  let termVar = 0;               // какой вариант «образа из жизни» показан сейчас
+  const curId = () => termStack[termStack.length - 1];
+
+  function renderTerm(keepDetails) {
+    const id = curId();
+    const open = keepDetails ? [...termContent.querySelectorAll('details')].map((d) => d.open) : [];
+    termContent.innerHTML = renderTermCard(index[id].term, termVar, index, progress.status(id));
+    termContent.querySelectorAll('details').forEach((d, k) => { d.open = !!open[k]; });
+    termBack.hidden = termStack.length < 2;
+  }
   function openTerm(id) {
-    const hit = index[id];
-    if (!hit) return;
-    T.emoji.textContent = hit.term.emoji;
-    T.name.textContent = hit.term.name;
-    T.formal.textContent = hit.term.formal;
-    T.funny.textContent = hit.term.funny;
-    T.mnemo.textContent = hit.term.mnemo;
-    termOpen = true;
+    if (!index[id]) return;
+    if (curId() !== id) termStack.push(id);
+    termVar = 0;
+    renderTerm(false);
     termLayer.classList.add('open');
     termLayer.setAttribute('aria-hidden', 'false');
-    termLayer.querySelector('.term-card').scrollTop = 0;
+    termContent.scrollTop = 0;
     buzz('medium');
-    setTimeout(() => { if (termOpen) $('#term-close').focus({ preventScroll: true }); }, 260);
+    setTimeout(() => { if (termStack.length) $('#term-close').focus({ preventScroll: true }); }, 260);
   }
   function closeTerm() {
-    if (!termOpen) return;
-    termOpen = false;
+    if (!termStack.length) return;
+    termStack = [];
     termLayer.classList.remove('open');
     termLayer.setAttribute('aria-hidden', 'true');
+    syncStatus();
+    if (pages[cur].type === 'glossary') updateGlossary();   // статус мог поменяться — фильтр «Трудные»/«Знаю»
     buzz('light');
   }
-  // Делегирование: клики по терминам внутри текста и по чипам
-  bodyEl.addEventListener('click', (e) => {
+  function stepBack() {          // «Назад»: на предыдущий термин, а если он первый — закрыть карточку
+    if (termStack.length > 1) { termStack.pop(); termVar = 0; renderTerm(false); termContent.scrollTop = 0; buzz('light'); }
+    else closeTerm();
+  }
+
+  termContent.addEventListener('click', (e) => {              // переход по ссылкам внутри карточки
     const el = e.target.closest('[data-term]');
     if (el) openTerm(el.dataset.term);
   });
+  termBack.addEventListener('click', stepBack);
   $('#term-close').addEventListener('click', closeTerm);
   $('#term-veil').addEventListener('click', closeTerm);
+
+  // «Не понял — иначе»: помечаем термин трудным и показываем другой образ
+  $('#term-hard').addEventListener('click', () => {
+    const id = curId();
+    if (!id) return;
+    progress.markHard(id);
+    termVar = (termVar + 1) % termVariants(index[id].term).length;
+    renderTerm(true);
+    const fun = $('#term-fun');
+    fun.classList.remove('flash'); void fun.offsetWidth; fun.classList.add('flash');
+    fun.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    buzz('medium');
+  });
+  // «Понял»: отмечаем термин изученным и закрываем карточку
+  $('#term-ok').addEventListener('click', () => {
+    const id = curId();
+    if (id) progress.markKnown(id);
+    buzz('medium');
+    closeTerm();
+  });
 
   /* ---------- Открытие / закрытие панели ---------- */
   const tgBack = hooks.tg && hooks.tg.BackButton;
@@ -486,18 +503,20 @@ export function initStudy(hooks = {}) {
 
   btnOpen.addEventListener('click', () => (isOpen ? close() : open()));
   closeBtn.addEventListener('click', close);
-  veil.addEventListener('click', () => { if (!termOpen) close(); });
+  veil.addEventListener('click', () => { if (!termStack.length) close(); });
 
-  // Кнопка «Назад» в Telegram: сначала закрывает термин, потом панель
+  // Кнопка «Назад» в Telegram: шаг назад по терминам, потом закрытие карточки, потом панели
   try {
-    tgBack && tgBack.onClick(() => { if (!isOpen) return; termOpen ? closeTerm() : close(); });
+    tgBack && tgBack.onClick(() => { if (!isOpen) return; termStack.length ? stepBack() : close(); });
   } catch (e) { /* старый клиент */ }
 
   window.addEventListener('keydown', (e) => {
     if (!isOpen) return;
-    if (e.key === 'Escape') { termOpen ? closeTerm() : close(); }
-    else if (!termOpen && e.key === 'ArrowRight') go(1);
-    else if (!termOpen && e.key === 'ArrowLeft') go(-1);
+    if (e.key === 'Escape') { termStack.length ? stepBack() : close(); }
+    else if (!termStack.length && !e.target.closest('input')) {
+      if (e.key === 'ArrowRight') go(1);
+      else if (e.key === 'ArrowLeft') go(-1);
+    }
   });
 
   // Свайп шторки вниз за «ручку» и шапку — закрыть
@@ -528,5 +547,5 @@ export function initStudy(hooks = {}) {
   });
 
   show(cur, 0);                                            // первичная отрисовка (панель скрыта)
-  return { open, close, show };
+  return { open, close, show, openTerm };
 }
