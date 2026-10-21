@@ -1,46 +1,65 @@
 /* ============================================================================
-   study.js — логика раздела «Шпаргалки» для 3D-атласа судна
-   ----------------------------------------------------------------------------
-   Новая иерархия: Учебник -> Глава -> Тема.
+   study.js — панель «Шпаргалки»: один учебник = одна лента
+   Данные: study-data.js (учебник → глава → тема).
+   Поиск: search.js (глобальный, по всем учебникам, главам, темам, формулам…).
+   Карточка термина — прежняя слоистая.
    ============================================================================ */
 
 import { studyData } from './study-data.js';
-export { studyData };
+import {
+  buildSearchIndex, search, highlight, snippet, norm, KIND_LABEL,
+} from './search.js';
 
-/* ============================================================================
-   1. ЧИСТЫЕ ФУНКЦИИ И ИНДЕКСАЦИЯ
-   ============================================================================ */
+export { buildSearchIndex };
 
-const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-const norm = (s) => String(s).toLowerCase().replace(/ё/g, 'е');
+const LS = {
+  book: 'atlas.study.book',
+  done: 'atlas.study.done',
+  scope: 'atlas.study.searchScope',
+  scroll: (id) => `atlas.study.scroll.${id}`,
+};
 
-/** Распаковка глубокой структуры (Учебник -> Глава -> Тема) в плоские индексы для поиска и тренировки */
-export function buildIndices(data = studyData) {
-  const topics = [];
-  const termIdx = {};
-  data.books.forEach((b) => {
-    b.chapters.forEach((c) => {
-      c.topics.forEach((t) => {
-        t._book = b;
-        t._chapter = c;
-        topics.push(t);
-        if (t.terms) {
-          t.terms.forEach((term) => {
-            termIdx[term.id] = { term, topic: t };
-          });
-        }
-      });
-    });
-  });
-  return { topics, termIdx };
+const PAGE = 25; // сколько результатов показывать за раз
+
+const storeGet = (k, fallback = null) => {
+  try {
+    const v = localStorage.getItem(k);
+    return v == null ? fallback : v;
+  } catch {
+    return fallback;
+  }
+};
+const storeSet = (k, v) => {
+  try { localStorage.setItem(k, v); } catch { /* Telegram / private mode */ }
+};
+
+const esc = (s) =>
+  String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+export function allTopicRows(data = studyData) {
+  const rows = [];
+  for (const book of data.books) {
+    for (const chapter of book.chapters) {
+      for (const topic of chapter.topics) {
+        rows.push({ book, chapter, topic });
+      }
+    }
+  }
+  return rows;
 }
 
-/** Все варианты «образа из жизни»: основной + запасные («Не понял — иначе») */
-export const termVariants = (term) => [term.funny, ...(term.again || [])].filter(Boolean);
+/** id термина → { term, topic, book, chapter } */
+export function buildTermIndex(data = studyData) {
+  const idx = {};
+  for (const row of allTopicRows(data)) {
+    for (const term of row.topic.terms || []) {
+      idx[term.id] = { ...row, term };
+    }
+  }
+  return idx;
+}
 
-/** Строка с разметкой → безопасный HTML: **жирный** и {{id}} → кнопка-термин */
 export function richText(str, index) {
-  if (!str) return '';
   return esc(str)
     .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
     .replace(/\{\{(\w+)\}\}/g, (m, id) => {
@@ -51,507 +70,509 @@ export function richText(str, index) {
     });
 }
 
-/** Рендер Оглавления (список учебников и тем) */
-export function renderTOC(data, progress) {
-  return `<div class="toc-wrap">` + data.books.map(b => `
-    <div class="toc-book">
-      <div class="toc-b-head"><i>${b.icon}</i><div><b>${esc(b.title)}</b><small>${esc(b.author)}</small></div></div>
-      ${b.chapters.map(c => `
-        <div class="toc-chap">
-          <div class="toc-c-title">${esc(c.title)}</div>
-          <div class="toc-topics">
-            ${c.topics.map(t => {
-               const terms = t.terms || [];
-               const known = terms.filter(x => progress.status(x.id) === 'known').length;
-               const tot = terms.length;
-               const pct = tot ? Math.round((known / tot) * 100) : 0;
-               return `<button type="button" class="toc-btn" data-topic="${t.id}">
-                 <span class="toc-t-name">${esc(t.short)}</span>
-                 <span class="toc-t-prog">${pct}%</span>
-               </button>`;
-            }).join('')}
-          </div>
-        </div>
-      `).join('')}
-    </div>
-  `).join('') + `</div>`;
+export function pagesLabel(book, topic) {
+  const p = topic.pages;
+  if (!p || !p.from) return '';
+  const range = p.to && p.to !== p.from ? `${p.from}–${p.to}` : String(p.from);
+  return `${book.author}, стр. ${range}`;
 }
 
-/** Рендер конкретной Темы (открывается из Оглавления) */
-export function renderTopicView(topic, index, statusOf = () => 'new') {
-  const formulas = topic.formulas && topic.formulas.length
-    ? `<h3 class="s-h">Формулы</h3><div class="s-formulas">${topic.formulas
-        .map((x) => `<div class="s-formula"><code>${esc(x.f)}</code><span>${esc(x.note)}</span></div>`)
-        .join('')}</div>`
-    : '';
-  const facts = topic.facts ? topic.facts.map((t) => `<li>${richText(t, index)}</li>`).join('') : '';
-  const chips = topic.terms
-    ? topic.terms.map((t) => `<button type="button" class="term-chip" data-term="${t.id}" data-st="${statusOf(t.id)}"><i>${t.emoji}</i>${esc(t.name)}</button>`).join('')
-    : '';
-  return `
-    <button type="button" class="ghost-btn back-to-toc" data-act="back-toc">‹ Оглавление</button>
-    <h2 class="s-main-title">${topic.icon} ${esc(topic.title)}</h2>
-    <p class="s-src">📖 ${esc(topic._book.title)} · ${esc(topic._chapter.title)}</p>
-    <div class="s-quick"><b>⚡ За 10 секунд</b>${esc(topic.quick)}</div>
-    ${formulas}
-    <h3 class="s-h">Факты</h3>
-    <ul class="s-facts">${facts}</ul>
-    <h3 class="s-h">Сложные термины <small>нажми — объясню простыми словами</small></h3>
-    <div class="s-terms">${chips}</div>`;
-}
-
-/** Блок «Образ из жизни» (вариант vi из списка) */
-function funInner(term, vi, index) {
-  const vs = termVariants(term);
-  const label = vi === 0 ? 'Образ из жизни' : 'Другой образ';
-  const count = vs.length > 1 ? ` · ${vi + 1}/${vs.length}` : '';
-  return `<span class="term-k">${label}${count}</span><p>${richText(vs[vi], index)}</p>`;
-}
-
-/** Слоистая карточка термина */
-export function renderTermCard(term, vi, index, status = 'new') {
-  const badge =
-    status === 'hard' ? '<span class="term-status st-hard">🤷 трудный</span>'
-    : status === 'known' ? '<span class="term-status st-known">✅ знаю</span>' : '';
-  const mix = (term.notmix || [])
-    .map((m) => {
-      const name = m.id && index[m.id]
-        ? `<button type="button" class="term-link" data-term="${m.id}">${esc(m.name)}</button>`
-        : `<b>${esc(m.name)}</b>`;
-      return `<li>${name} — ${richText(m.diff, index)}</li>`;
-    })
+function renderTopic(book, chapter, topic, index, done) {
+  const formulas = (topic.formulas || [])
+    .map((x, i) => `<div class="s-formula" data-i="${i}"><code>${esc(x.f)}</code><span>${esc(x.note)}</span></div>`)
     .join('');
+  const facts = (topic.facts || []).map((t, i) => `<li data-i="${i}">${richText(t, index)}</li>`).join('');
+  const chips = (topic.terms || [])
+    .map((t) => `<button type="button" class="term-chip" data-term="${t.id}"><i>${t.emoji}</i>${esc(t.name)}</button>`)
+    .join('');
+  const pages = pagesLabel(book, topic);
+  const learned = !!done[topic.id];
   return `
-    <div class="term-emoji" aria-hidden="true">${term.emoji || '⚓'}</div>
-    <h3 id="term-name">${esc(term.name)}${badge}</h3>
-    <section class="term-sec lv1"><span class="term-k">Простыми словами</span><p>${richText(term.simple, index)}</p></section>
-    ${term.funny ? `<section class="term-sec fun" id="term-fun">${funInner(term, vi, index)}</section>` : ''}
-    ${term.onship ? `<details class="term-det"><summary>⚓ На корабле</summary><p>${richText(term.onship, index)}</p></details>` : ''}
-    <details class="term-det"><summary>🎓 По-научному</summary><p>${richText(term.formal, index)}</p></details>
-    ${mix ? `<details class="term-det"><summary>🔀 Не путай с…</summary><ul>${mix}</ul></details>` : ''}
-    ${term.mnemo ? `<section class="term-sec mn"><span class="term-k">Запомни</span><p>${richText(term.mnemo, index)}</p></section>` : ''}`;
+    <article class="s-topic${learned ? ' is-done' : ''}" id="topic-${esc(topic.id)}" data-topic="${esc(topic.id)}" data-chapter="${esc(chapter.id)}">
+      <header class="s-topic-head">
+        <div class="s-topic-titles">
+          <p class="s-chapter">${esc(chapter.title)}</p>
+          <h3 class="s-topic-title">${esc(topic.title)}</h3>
+          ${pages ? `<p class="s-pages">${esc(pages)}</p>` : ''}
+        </div>
+        <button type="button" class="s-done" data-done="${esc(topic.id)}" aria-pressed="${learned}">
+          ${learned ? 'Выучено' : 'Отметить'}
+        </button>
+      </header>
+      ${topic.quick ? `<div class="s-quick"><b>За 10 секунд</b>${esc(topic.quick)}</div>` : ''}
+      ${formulas ? `<h4 class="s-h">Формулы</h4><div class="s-formulas">${formulas}</div>` : ''}
+      ${facts ? `<h4 class="s-h">Факты</h4><ul class="s-facts">${facts}</ul>` : ''}
+      ${chips ? `<h4 class="s-h">Термины <small>нажми — на пальцах</small></h4><div class="s-terms">${chips}</div>` : ''}
+    </article>`;
 }
 
-/** Каркас вкладки «Словарь» (поиск + фильтры) */
-export function renderGlossaryShell(query, filter) {
-  const f = (id, label) =>
-    `<button type="button" class="g-chip${filter === id ? ' active' : ''}" data-filter="${id}">${label}</button>`;
-  return `
-    <div class="g-top">
-      <input id="g-q" class="g-search" type="search" placeholder="Найти термин…" autocomplete="off" value="${esc(query)}" aria-label="Поиск по словарю">
-      <div class="g-filters">${f('all', 'Все')}${f('hard', '🤷 Трудные')}${f('new', '🆕 Новые')}${f('known', '✅ Знаю')}</div>
-    </div>
-    <p class="g-count" id="g-count"></p>
-    <div class="g-list" id="g-list"></div>`;
-}
-
-/** Список терминов словаря */
-export function renderGlossaryList(index, statusOf, query = '', filter = 'all') {
-  const q = norm(query.trim());
-  const all = Object.values(index).map(({ term }) => term).sort((a, b) => a.name.localeCompare(b.name, 'ru'));
-  const shown = all.filter((t) => {
-    if (filter !== 'all' && statusOf(t.id) !== filter) return false;
-    return !q || norm(t.name).includes(q) || (t.simple && norm(t.simple).includes(q));
-  });
-  const html = shown.length
-    ? shown.map((t) => `
-        <button type="button" class="g-row" data-term="${t.id}" data-st="${statusOf(t.id)}">
-          <span class="g-ic">${t.emoji || '⚓'}</span>
-          <span class="g-tx"><b>${esc(t.name)}</b><small>${esc(t.simple || t.formal)}</small></span>
-          <i class="g-dot" aria-hidden="true"></i>
-        </button>`).join('')
-    : '<p class="g-empty">Ничего не нашлось. Попробуй другое слово.</p>';
-  return { html, shown: shown.length, total: all.length, known: all.filter((t) => statusOf(t.id) === 'known').length, hard: all.filter((t) => statusOf(t.id) === 'hard').length };
-}
-
-/** Тренировка */
-export function pickQuestion(index, statusOf, rng = Math.random, lastId = null) {
-  const W = { hard: 4, new: 2, known: 1 };
-  const all = Object.entries(index).map(([id, v]) => ({ id, topicId: v.topic.id }));
-  const pool = all.filter((t) => t.id !== lastId);
-  const total = pool.reduce((s, t) => s + W[statusOf(t.id)], 0);
-  let r = rng() * total;
-  let ans = pool[pool.length - 1];
-  for (const t of pool) { r -= W[statusOf(t.id)]; if (r <= 0) { ans = t; break; } }
-
-  const shuffle = (a) => {
-    const x = a.slice();
-    for (let i = x.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [x[i], x[j]] = [x[j], x[i]]; }
-    return x;
-  };
-  const others = all.filter((t) => t.id !== ans.id);
-  const same = shuffle(others.filter((t) => t.topicId === ans.topicId)).slice(0, 2);
-  const rest = shuffle(others.filter((t) => !same.includes(t))).slice(0, 3 - same.length);
-  return { answer: ans.id, options: shuffle([ans, ...same, ...rest]).map((t) => t.id) };
-}
-
-/* ============================================================================
-   2. ПРОГРЕСС (localStorage + CloudStorage)
-   ============================================================================ */
-const PKEY = 'atlas.study.progress';
-
-export function createProgress(tg, onRemote) {
-  let s = { k: {}, h: {}, o: {}, t: 0 };
-  const toMap = (a) => Object.fromEntries((a || []).map((i) => [i, 1]));
-  const parse = (raw) => {
-    try { const o = JSON.parse(raw); return o ? { k: toMap(o.k), h: toMap(o.h), o: o.o || {}, t: o.t || 0 } : null; }
-    catch (e) { return null; }
-  };
-  const pack = () => JSON.stringify({ k: Object.keys(s.k), h: Object.keys(s.h), o: s.o, t: s.t });
-
-  try { const local = parse(localStorage.getItem(PKEY)); if (local) s = local; } catch (e) {}
-
-  let cloud = null;
-  try { if (tg && tg.CloudStorage && tg.isVersionAtLeast && tg.isVersionAtLeast('6.9')) cloud = tg.CloudStorage; } catch (e) {}
-  if (cloud) {
-    try {
-      cloud.getItem(PKEY, (err, val) => {
-        if (err || !val) return;
-        const c = parse(val);
-        if (c && c.t > s.t) {
-          s = c;
-          try { localStorage.setItem(PKEY, val); } catch (e) {}
-          onRemote && onRemote();
-        }
-      });
-    } catch (e) {}
-  }
-
-  function save() {
-    s.t = Date.now();
-    const raw = pack();
-    try { localStorage.setItem(PKEY, raw); } catch (e) {}
-    try { cloud && cloud.setItem(PKEY, raw, () => {}); } catch (e) {}
-  }
-
-  return {
-    status: (id) => (s.h[id] ? 'hard' : s.k[id] ? 'known' : 'new'),
-    markKnown(id) { s.k[id] = 1; delete s.h[id]; save(); },
-    markHard(id) { s.h[id] = 1; delete s.k[id]; delete s.o[id]; save(); },
-    answer(id, ok) {
-      if (ok) {
-        s.o[id] = (s.o[id] || 0) + 1;
-        if (s.o[id] >= 2) { s.k[id] = 1; delete s.h[id]; }
-      } else { delete s.o[id]; s.h[id] = 1; delete s.k[id]; }
-      save();
-    },
-  };
-}
-
-/* ============================================================================
-   3. ПАНЕЛЬ И ЛОГИКА
-   ============================================================================ */
 export function initStudy(hooks = {}) {
-  const $ = (s) => document.querySelector(s);
+  const $ = (s, el = document) => el.querySelector(s);
   const root = $('#study');
   if (!root) return null;
 
   const btnOpen = $('#btn-study');
   const veil = $('#study-veil');
-  const tabsEl = $('#study-tabs');
   const bodyEl = $('#study-body');
-  const contentEl = $('#study-content');
-  const dotsEl = $('#study-dots');
-  const prevBtn = $('#study-prev');
-  const nextBtn = $('#study-next');
+  const streamEl = $('#study-stream');
+  const dictEl = $('#study-dict');
+  const drillEl = $('#study-drill');
+  const booksEl = $('#study-books');
+  const modesEl = $('#study-modes');
   const closeBtn = $('#study-close');
   const termLayer = $('#term-layer');
-  const termContent = $('#term-content');
-  const termBack = $('#term-back');
+  const tocLayer = $('#toc-layer');
+  const tocList = $('#toc-list');
+  const searchInput = $('#study-q');
+  const searchDrop = $('#search-drop');
+  const btnToc = $('#btn-toc');
 
-  const indices = buildIndices();
-  const index = indices.termIdx;
-  const allTopics = indices.topics;
-  const buzz = (k) => { try { hooks.haptic && hooks.haptic(k); } catch (e) {} };
+  const books = studyData.books;
+  const index = buildTermIndex();
+  const searchIndex = buildSearchIndex(studyData);
+  const buzz = (k) => { try { hooks.haptic && hooks.haptic(k); } catch { /* нет вибро */ } };
 
-  /* ---------- Страницы ---------- */
-  const pages = [
-    { id: 'toc', short: 'Учебники', icon: '📚' },
-    { id: 'glossary', short: 'Словарь', icon: '📖' },
-    { id: 'training', short: 'Тренировка', icon: '🎯' },
-  ];
+  const bookById = Object.fromEntries(books.map((b) => [b.id, b]));
+  let bookId = books[0].id;
+  const savedBook = storeGet(LS.book);
+  if (savedBook && bookById[savedBook]) bookId = savedBook;
 
-  const progress = createProgress(hooks.tg, () => { syncStatus(); if (pages[cur].id === 'glossary') updateGlossary(); });
-  const KEY = 'atlas.study.page';
-  let cur = 0;
-  let activeTopicId = null; // если null — показываем Оглавление, если есть ID — показываем саму Тему
+  let done = {};
+  try { done = JSON.parse(storeGet(LS.done, '{}')) || {}; } catch { done = {}; }
+
+  let mode = 'read';
   let isOpen = false;
-  try {
-    const saved = parseInt(localStorage.getItem(KEY), 10);
-    if (saved >= 0 && saved < pages.length) cur = saved;
-  } catch (e) {}
+  let termOpen = false;
+  let tocOpen = false;
+  let drillI = 0;
+  let drillReveal = false;
+  let scrollTimer = 0;
+  let searchTimer = 0;
+
+  // состояние поиска
+  let scope = storeGet(LS.scope) === 'book' ? 'book' : 'all'; // «все учебники» по умолчанию
+  let found = { hits: [], toks: [], outside: 0 };
+  let shown = PAGE;
+  let activeHit = -1;
+
+  const book = () => bookById[bookId];
+  const persistDone = () => storeSet(LS.done, JSON.stringify(done));
+  const persistBook = () => storeSet(LS.book, bookId);
+  const saveScroll = () => storeSet(LS.scroll(bookId), String(bodyEl.scrollTop | 0));
+  const restoreScroll = () => {
+    const y = parseInt(storeGet(LS.scroll(bookId), '0'), 10);
+    bodyEl.scrollTop = Number.isFinite(y) ? y : 0;
+  };
 
   $('#study-title').textContent = studyData.meta.title;
-  $('#study-sub').textContent = studyData.meta.subtitle;
   $('#study-disc').textContent = studyData.meta.disclaimer;
-  tabsEl.innerHTML = pages
-    .map((p, i) => `<button type="button" role="tab" class="study-tab" data-i="${i}" aria-selected="false"><i>${p.icon}</i>${esc(p.short)}</button>`)
-    .join('');
-  dotsEl.innerHTML = pages.map(() => '<span></span>').join('');
+  searchInput.placeholder = 'Поиск: главы, темы, формулы, термины';
 
-  const g = { q: '', f: 'all' };
-  const tr = { asked: 0, right: 0, streak: 0, q: null, answered: false, last: null };
-
-  function syncStatus() {
-    contentEl.querySelectorAll('[data-term][data-st]').forEach((el) => { el.dataset.st = progress.status(el.dataset.term); });
-    // Обновляем проценты в Оглавлении, если оно открыто
-    if (pages[cur].id === 'toc' && !activeTopicId) {
-      contentEl.querySelectorAll('.toc-btn').forEach((btn) => {
-         const tId = btn.dataset.topic;
-         const t = allTopics.find(x => x.id === tId);
-         if (t && t.terms) {
-           const known = t.terms.filter(x => progress.status(x.id) === 'known').length;
-           const pct = t.terms.length ? Math.round((known / t.terms.length) * 100) : 0;
-           btn.querySelector('.toc-t-prog').textContent = pct + '%';
-         }
-      });
-    }
+  function setSub() {
+    const b = book();
+    $('#study-sub').textContent = `${b.author} · «${b.work}»`;
   }
 
-  function updateGlossary() {
-    const r = renderGlossaryList(index, progress.status, g.q, g.f);
-    const list = $('#g-list');
-    if (!list) return;
-    list.innerHTML = r.html;
-    $('#g-count').textContent = `Показано ${r.shown} из ${r.total} · знаю ${r.known} · трудных ${r.hard}`;
+  function paintBooks() {
+    booksEl.innerHTML = books.map((b) =>
+      `<button type="button" class="study-book${b.id === bookId ? ' active' : ''}" data-book="${b.id}" aria-pressed="${b.id === bookId}">`
+      + `<i>${b.icon}</i>${esc(b.short)}</button>`
+    ).join('');
   }
 
-  function renderTraining() {
-    if (!tr.q) { tr.q = pickQuestion(index, progress.status, Math.random, tr.last); tr.answered = false; }
-    const term = index[tr.q.answer].term;
-    const opts = tr.q.options
-      .map((id) => `<button type="button" class="tr-opt" data-opt="${id}">${esc(index[id].term.name)}</button>`)
+  function paintModes() {
+    [...modesEl.querySelectorAll('[data-mode]')].forEach((btn) => {
+      const on = btn.dataset.mode === mode;
+      btn.classList.toggle('active', on);
+      btn.setAttribute('aria-pressed', String(on));
+    });
+    streamEl.hidden = mode !== 'read';
+    dictEl.hidden = mode !== 'dict';
+    drillEl.hidden = mode !== 'drill';
+    btnToc.disabled = mode !== 'read';
+  }
+
+  function paintStream() {
+    const b = book();
+    streamEl.innerHTML = b.chapters
+      .map((ch) => ch.topics.map((t) => renderTopic(b, ch, t, index, done)).join(''))
       .join('');
-    contentEl.innerHTML = `
-      <div class="tr-stats" id="tr-stats"></div>
-      <div class="tr-card"><span class="tr-k">Что это за термин?</span><p class="tr-q">${esc(term.simple || term.formal)}</p></div>
-      <div class="tr-opts">${opts}</div>
-      <div class="tr-fb" id="tr-fb" aria-live="polite"></div>
-      <p class="tr-hint">Неверные ответы попадают в «Трудные» и выпадают чаще. «Знаю» ставится после двух верных ответов подряд.</p>`;
-    updateTrainingStats();
-  }
-  function updateTrainingStats() {
-    const el = $('#tr-stats');
-    if (el) el.innerHTML = `<span>Верно: <b>${tr.right}</b> из <b>${tr.asked}</b></span><span>Серия: <b>${tr.streak}</b> 🔥</span>`;
-  }
-  function answerTraining(optId) {
-    if (tr.answered || !tr.q) return;
-    tr.answered = true;
-    const correct = tr.q.answer;
-    const ok = optId === correct;
-    progress.answer(correct, ok);
-    tr.asked++;
-    if (ok) { tr.right++; tr.streak++; } else { tr.streak = 0; }
-    contentEl.querySelectorAll('.tr-opt').forEach((b) => {
-      b.disabled = true;
-      if (b.dataset.opt === correct) b.classList.add('right');
-      else if (b.dataset.opt === optId) b.classList.add('wrong');
-    });
-    const t = index[correct].term;
-    $('#tr-fb').innerHTML = `
-      <div class="tr-res ${ok ? 'ok' : 'bad'}">${ok ? '✅ Верно!' : `❌ Это «${esc(t.name)}»`}</div>
-      ${t.funny ? `<p class="tr-explain">${richText(t.funny, index)}</p>` : ''}
-      <div class="tr-btns">
-        <button type="button" class="ghost-btn" data-term="${correct}">Открыть карточку</button>
-        <button type="button" class="ghost-btn primary" data-act="tr-next">Дальше →</button>
-      </div>`;
-    updateTrainingStats();
-    buzz(ok ? 'light' : 'medium');
   }
 
-  /* ---------- Показ страницы ---------- */
-  function show(i, dir) {
-    cur = (i + pages.length) % pages.length;
-    const page = pages[cur];
-    
-    if (page.id === 'toc') {
-      if (activeTopicId) {
-        const t = allTopics.find(x => x.id === activeTopicId);
-        contentEl.innerHTML = renderTopicView(t, index, progress.status);
-        contentEl.setAttribute('aria-label', t.title);
-      } else {
-        contentEl.innerHTML = renderTOC(studyData, progress);
-        contentEl.setAttribute('aria-label', 'Оглавление учебников');
+  function paintToc() {
+    const b = book();
+    tocList.innerHTML = b.chapters.map((ch) => {
+      const items = ch.topics.map((t) => {
+        const on = !!done[t.id];
+        const pg = pagesLabel(b, t);
+        return `<button type="button" class="toc-item${on ? ' is-done' : ''}" data-jump="${esc(t.id)}">
+          <span class="toc-mark" aria-hidden="true">${on ? '✓' : ''}</span>
+          <span class="toc-tx"><b>${esc(t.title)}</b>${pg ? `<small>${esc(pg)}</small>` : ''}</span>
+        </button>`;
+      }).join('');
+      return `<section class="toc-ch"><h3>${esc(ch.title)}</h3>${items}</section>`;
+    }).join('');
+  }
+
+  function paintDict() {
+    dictEl.innerHTML = books.map((b) => {
+      const terms = b.chapters.flatMap((ch) => ch.topics.flatMap((t) => t.terms || []));
+      if (!terms.length) {
+        return `<section class="dict-ch"><h3>${esc(b.title)}</h3><p class="s-empty">Терминов пока нет — появятся вместе с конспектом.</p></section>`;
       }
-    } else if (page.id === 'glossary') {
-      contentEl.innerHTML = renderGlossaryShell(g.q, g.f);
-      contentEl.setAttribute('aria-label', 'Словарь терминов');
-      updateGlossary();
-    } else {
-      renderTraining();
-      contentEl.setAttribute('aria-label', 'Тренировка терминов');
-    }
-    bodyEl.scrollTop = 0;
-
-    contentEl.classList.remove('from-right', 'from-left');
-    if (dir) {
-      void contentEl.offsetWidth;
-      contentEl.classList.add(dir > 0 ? 'from-right' : 'from-left');
-    }
-
-    [...tabsEl.children].forEach((b, k) => {
-      const on = k === cur;
-      b.classList.toggle('active', on);
-      b.setAttribute('aria-selected', String(on));
-      if (on && b.scrollIntoView) b.scrollIntoView({ inline: 'center', block: 'nearest', behavior: dir ? 'smooth' : 'auto' });
-    });
-    [...dotsEl.children].forEach((d, k) => d.classList.toggle('on', k === cur));
-    prevBtn.textContent = '‹ ' + pages[(cur - 1 + pages.length) % pages.length].short;
-    nextBtn.textContent = pages[(cur + 1) % pages.length].short + ' ›';
-    try { localStorage.setItem(KEY, String(cur)); } catch (e) {}
+      const chips = terms.map((t) =>
+        `<button type="button" class="term-chip" data-term="${t.id}"><i>${t.emoji}</i>${esc(t.name)}</button>`
+      ).join('');
+      return `<section class="dict-ch"><h3>${esc(b.author)} · ${esc(b.title)}</h3><div class="s-terms">${chips}</div></section>`;
+    }).join('');
   }
-  const go = (dir) => { activeTopicId = null; show(cur + dir, dir); buzz('light'); };
 
-  tabsEl.addEventListener('click', (e) => {
-    const b = e.target.closest('.study-tab');
-    if (!b) return;
-    const i = +b.dataset.i;
-    if (i !== cur) { activeTopicId = null; show(i, i > cur ? 1 : -1); buzz('light'); }
-  });
-  prevBtn.addEventListener('click', () => go(-1));
-  nextBtn.addEventListener('click', () => go(1));
+  function drillPool() {
+    return book().chapters.flatMap((ch) =>
+      ch.topics.flatMap((t) => (t.questions || []).map((q) => ({ ...q, topic: t })))
+    );
+  }
 
-  bodyEl.addEventListener('click', (e) => {
-    // Клик по теме в оглавлении
-    const btnToc = e.target.closest('[data-topic]');
-    if (btnToc) {
-      activeTopicId = btnToc.dataset.topic;
-      show(0, 1);
-      buzz('light');
+  function paintDrill() {
+    const pool = drillPool();
+    if (!pool.length) {
+      drillEl.innerHTML = `<div class="drill-empty">
+        <p>Вопросов по «${esc(book().title)}» ещё нет.</p>
+        <p class="s-muted">Как только в теме появится массив questions — сюда лягут формулы, правила и числа.</p>
+      </div>`;
       return;
     }
-    // Кнопка "Назад к оглавлению" внутри темы
-    if (e.target.closest('[data-act="back-toc"]')) {
-      activeTopicId = null;
-      show(0, -1);
-      buzz('light');
-      return;
-    }
-    
-    const termEl = e.target.closest('[data-term]');
-    if (termEl) { openTerm(termEl.dataset.term); return; }
-    const filt = e.target.closest('[data-filter]');
-    if (filt) {
-      g.f = filt.dataset.filter;
-      contentEl.querySelectorAll('.g-chip').forEach((c) => c.classList.toggle('active', c === filt));
-      updateGlossary();
-      return;
-    }
-    const opt = e.target.closest('[data-opt]');
-    if (opt) { answerTraining(opt.dataset.opt); return; }
-    if (e.target.closest('[data-act="tr-next"]')) {
-      tr.last = tr.q && tr.q.answer; tr.q = null;
-      renderTraining();
-      bodyEl.scrollTop = 0;
-      buzz('light');
-    }
-  });
-  bodyEl.addEventListener('input', (e) => {
-    if (e.target.id === 'g-q') { g.q = e.target.value; updateGlossary(); }
-  });
-
-  let sx = 0, sy = 0, st = 0;
-  bodyEl.addEventListener('touchstart', (e) => {
-    const t = e.touches[0]; sx = t.clientX; sy = t.clientY; st = Date.now();
-  }, { passive: true });
-  bodyEl.addEventListener('touchend', (e) => {
-    if (termStack.length || e.target.closest('input')) return;
-    const t = e.changedTouches[0];
-    const dx = t.clientX - sx, dy = t.clientY - sy;
-    if (Math.abs(dx) > 70 && Math.abs(dx) > Math.abs(dy) * 1.6 && Date.now() - st < 700) go(dx < 0 ? 1 : -1);
-  }, { passive: true });
-
-  /* ---------- Карточка термина ---------- */
-  let termStack = [];
-  let termVar = 0;
-  const curId = () => termStack[termStack.length - 1];
-
-  function renderTerm(keepDetails) {
-    const id = curId();
-    const open = keepDetails ? [...termContent.querySelectorAll('details')].map((d) => d.open) : [];
-    termContent.innerHTML = renderTermCard(index[id].term, termVar, index, progress.status(id));
-    termContent.querySelectorAll('details').forEach((d, k) => { d.open = !!open[k]; });
-    termBack.hidden = termStack.length < 2;
+    drillI = ((drillI % pool.length) + pool.length) % pool.length;
+    const q = pool[drillI];
+    const kind = q.kind === 'formula' ? 'Формула' : q.kind === 'number' ? 'Число' : 'Правило';
+    drillEl.innerHTML = `
+      <p class="drill-meta">${esc(kind)} · ${drillI + 1} / ${pool.length} · ${esc(q.topic.title)}</p>
+      <p class="drill-q">${esc(q.prompt)}</p>
+      ${drillReveal ? `<p class="drill-a">${esc(q.answer)}</p>` : ''}
+      <div class="drill-actions">
+        ${drillReveal
+          ? `<button type="button" class="ghost-btn" id="drill-next">Дальше</button>`
+          : `<button type="button" class="ghost-btn" id="drill-show">Показать ответ</button>`}
+      </div>`;
   }
-  function openTerm(id) {
-    if (!index[id]) return;
-    if (curId() !== id) termStack.push(id);
-    termVar = 0;
-    renderTerm(false);
-    termLayer.classList.add('open');
-    termLayer.setAttribute('aria-hidden', 'false');
-    termContent.scrollTop = 0;
-    buzz('medium');
-    setTimeout(() => { if (termStack.length) $('#term-close').focus({ preventScroll: true }); }, 260);
+
+  function openBook(id, { restore = true } = {}) {
+    if (!bookById[id]) return;
+    if (id !== bookId) saveScroll();
+    bookId = id;
+    persistBook();
+    setSub();
+    paintBooks();
+    paintStream();
+    paintToc();
+    paintDrill();
+    if (restore) requestAnimationFrame(restoreScroll);
+    else bodyEl.scrollTop = 0;
   }
-  function closeTerm() {
-    if (!termStack.length) return;
-    termStack = [];
-    termLayer.classList.remove('open');
-    termLayer.setAttribute('aria-hidden', 'true');
-    syncStatus();
-    if (pages[cur].id === 'glossary') updateGlossary();
+
+  function setMode(next) {
+    if (next === mode) return;
+    if (mode === 'read') saveScroll();
+    mode = next;
+    paintModes();
+    if (mode === 'dict') paintDict();
+    if (mode === 'drill') paintDrill();
+    if (mode === 'read') requestAnimationFrame(restoreScroll);
+    else bodyEl.scrollTop = 0;
     buzz('light');
   }
-  function stepBack() {
-    if (termStack.length > 1) { termStack.pop(); termVar = 0; renderTerm(false); termContent.scrollTop = 0; buzz('light'); }
-    else closeTerm();
+
+  function jumpToTopic(topicId, after) {
+    if (mode !== 'read') {
+      mode = 'read';
+      paintModes();
+    }
+    const row = allTopicRows().find((r) => r.topic.id === topicId);
+    if (row && row.book.id !== bookId) openBook(row.book.id, { restore: false });
+    requestAnimationFrame(() => {
+      const el = document.getElementById(`topic-${topicId}`);
+      if (el) el.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      after && after();
+    });
   }
 
-  termContent.addEventListener('click', (e) => {
-    const el = e.target.closest('[data-term]');
-    if (el) openTerm(el.dataset.term);
+  function openToc() {
+    paintToc();
+    tocOpen = true;
+    tocLayer.classList.add('open');
+    tocLayer.setAttribute('aria-hidden', 'false');
+    buzz('light');
+  }
+  function closeToc() {
+    if (!tocOpen) return;
+    tocOpen = false;
+    tocLayer.classList.remove('open');
+    tocLayer.setAttribute('aria-hidden', 'true');
+  }
+
+  /* ---------- Карточка термина (логика прежняя) ---------- */
+  const T = {
+    emoji: $('#term-emoji'), name: $('#term-name'),
+    formal: $('#term-formal'), funny: $('#term-funny'), mnemo: $('#term-mnemo'),
+  };
+  function openTerm(id) {
+    const hit = index[id];
+    if (!hit) return;
+    T.emoji.textContent = hit.term.emoji;
+    T.name.textContent = hit.term.name;
+    T.formal.textContent = hit.term.formal;
+    T.funny.textContent = hit.term.funny;
+    T.mnemo.textContent = hit.term.mnemo;
+    termOpen = true;
+    termLayer.classList.add('open');
+    termLayer.setAttribute('aria-hidden', 'false');
+    termLayer.querySelector('.term-card').scrollTop = 0;
+    buzz('medium');
+    setTimeout(() => { if (termOpen) $('#term-close').focus({ preventScroll: true }); }, 260);
+  }
+  function closeTerm() {
+    if (!termOpen) return;
+    termOpen = false;
+    termLayer.classList.remove('open');
+    termLayer.setAttribute('aria-hidden', 'true');
+    buzz('light');
+  }
+
+  /* ==========================================================================
+     ГЛОБАЛЬНЫЙ ПОИСК
+     ========================================================================== */
+  function hideSearch() {
+    searchDrop.hidden = true;
+    searchDrop.innerHTML = '';
+    activeHit = -1;
+  }
+
+  const scopeBtn = (v, label) =>
+    `<button type="button" data-scope="${v}" class="${scope === v ? 'active' : ''}" aria-pressed="${scope === v}">${esc(label)}</button>`;
+
+  function hitHtml(h, i) {
+    const { toks } = found;
+    const book_ = bookById[h.bookId];
+    const titleMissing = toks.some((t) => !h.tn.includes(t));      // часть слов нашлась только в тексте
+    const sn = titleMissing ? highlight(snippet(h.raw, toks), toks) : '';
+    return `<button type="button" class="search-hit" role="option" data-i="${i}">
+      <span class="sh-kind k-${h.kind}">${KIND_LABEL[h.kind]}</span>
+      <span class="sh-tx">
+        <b>${highlight(h.title, toks)}</b>
+        ${sn ? `<em>${sn}</em>` : ''}
+        <small>${esc(h.crumb)}${book_ ? '' : ''}</small>
+      </span>
+    </button>`;
+  }
+
+  function renderSearch() {
+    const q = searchInput.value;
+    if (norm(q).trim().length < 2) { hideSearch(); return; }
+
+    found = search(searchIndex, q, { bookId: scope === 'book' ? bookId : null });
+    const n = found.hits.length;
+    const head = `<div class="sd-head">
+      <span class="sd-count">${n ? `Найдено: ${n}` : 'Ничего не найдено'}</span>
+      <span class="sd-scope" role="group" aria-label="Где искать">${scopeBtn('all', 'Все учебники')}${scopeBtn('book', book().short)}</span>
+    </div>`;
+
+    let body;
+    if (!n) {
+      body = `<div class="sd-list"><p class="search-empty">По запросу «${esc(q.trim())}» ничего нет.</p>`
+        + (found.outside
+          ? `<button type="button" class="sd-more" data-scope="all">Показать совпадения в других учебниках (${found.outside})</button>`
+          : '<p class="search-empty">Попробуй другое слово или часть слова.</p>')
+        + '</div>';
+    } else {
+      const visible = found.hits.slice(0, shown);
+      body = `<div class="sd-list" role="listbox">${visible.map(hitHtml).join('')}`
+        + (n > shown ? `<button type="button" class="sd-more" data-more>Показать ещё (${n - shown})</button>` : '')
+        + (scope === 'book' && found.outside
+          ? `<button type="button" class="sd-more" data-scope="all">+ ещё ${found.outside} в других учебниках</button>`
+          : '')
+        + '</div>';
+    }
+    searchDrop.hidden = false;
+    searchDrop.innerHTML = head + body;
+    activeHit = -1;
+  }
+
+  function setActive(i) {
+    const els = searchDrop.querySelectorAll('.search-hit');
+    els.forEach((el, k) => el.classList.toggle('active', k === i));
+    activeHit = i;
+    if (els[i]) els[i].scrollIntoView({ block: 'nearest' });
+  }
+
+  /** Короткая подсветка найденного места после перехода */
+  function flash(h) {
+    const art = document.getElementById(`topic-${h.topicId}`);
+    if (!art) return;
+    let el = art;
+    if (h.kind === 'formula') el = art.querySelector(`.s-formula[data-i="${h.ref}"]`) || art;
+    if (h.kind === 'fact') el = art.querySelector(`.s-facts li[data-i="${h.ref}"]`) || art;
+    el.classList.remove('flash');
+    void el.offsetWidth;                       // перезапуск анимации
+    el.classList.add('flash');
+    if (el !== art) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    setTimeout(() => el.classList.remove('flash'), 2300);
+  }
+
+  function goDrill(h) {
+    if (h.bookId !== bookId) { drillI = 0; openBook(h.bookId, { restore: false }); }
+    const k = drillPool().findIndex((q) => q.id === h.id);
+    drillI = k >= 0 ? k : 0;
+    drillReveal = false;
+    if (mode !== 'drill') setMode('drill'); else paintDrill();
+  }
+
+  function openHit(h) {
+    closeToc();
+    hideSearch();
+    searchInput.blur();
+    buzz('light');
+    if (h.kind === 'question') { goDrill(h); return; }
+    jumpToTopic(h.topicId, () => {
+      if (h.kind === 'term') openTerm(h.id);
+      else flash(h);
+    });
+  }
+
+  searchInput.addEventListener('input', () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => { shown = PAGE; renderSearch(); }, 120);
   });
-  termBack.addEventListener('click', stepBack);
+  searchInput.addEventListener('focus', () => {
+    if (norm(searchInput.value).trim().length >= 2) renderSearch();
+  });
+  searchInput.addEventListener('keydown', (e) => {
+    if (searchDrop.hidden) return;
+    const n = searchDrop.querySelectorAll('.search-hit').length;
+    if (e.key === 'ArrowDown') { e.preventDefault(); if (n) setActive((activeHit + 1) % n); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); if (n) setActive((activeHit - 1 + n) % n); }
+    else if (e.key === 'Enter') {
+      const h = found.hits[activeHit >= 0 ? activeHit : 0];
+      if (h) { e.preventDefault(); openHit(h); }
+    }
+  });
+  searchDrop.addEventListener('click', (e) => {
+    const sc = e.target.closest('[data-scope]');
+    if (sc) {
+      scope = sc.dataset.scope === 'book' ? 'book' : 'all';
+      storeSet(LS.scope, scope);
+      shown = PAGE;
+      renderSearch();
+      buzz('light');
+      return;
+    }
+    if (e.target.closest('[data-more]')) {
+      shown += PAGE;
+      renderSearch();
+      return;
+    }
+    const hit = e.target.closest('.search-hit');
+    if (!hit) return;
+    const h = found.hits[Number(hit.dataset.i)];
+    if (h) openHit(h);
+  });
+
+  /* ---------- События панели ---------- */
+  booksEl.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-book]');
+    if (!b || b.dataset.book === bookId) return;
+    drillI = 0;
+    drillReveal = false;
+    openBook(b.dataset.book, { restore: true });
+    if (!searchDrop.hidden && scope === 'book') renderSearch();
+    buzz('light');
+  });
+
+  modesEl.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-mode]');
+    if (!b) return;
+    closeToc();
+    hideSearch();
+    drillReveal = false;
+    setMode(b.dataset.mode);
+  });
+
+  btnToc.addEventListener('click', () => { tocOpen ? closeToc() : openToc(); });
+  $('#toc-close').addEventListener('click', closeToc);
+  $('#toc-veil').addEventListener('click', closeToc);
+  tocList.addEventListener('click', (e) => {
+    const item = e.target.closest('[data-jump]');
+    if (!item) return;
+    closeToc();
+    jumpToTopic(item.dataset.jump);
+    buzz('light');
+  });
+
+  bodyEl.addEventListener('scroll', () => {
+    if (mode !== 'read') return;
+    clearTimeout(scrollTimer);
+    scrollTimer = setTimeout(saveScroll, 140);
+  }, { passive: true });
+
+  root.addEventListener('click', (e) => {
+    const termBtn = e.target.closest('[data-term]');
+    if (termBtn) { openTerm(termBtn.dataset.term); return; }
+    const doneBtn = e.target.closest('[data-done]');
+    if (doneBtn) {
+      const id = doneBtn.dataset.done;
+      done[id] = !done[id];
+      if (!done[id]) delete done[id];
+      persistDone();
+      const article = document.getElementById(`topic-${id}`);
+      if (article) article.classList.toggle('is-done', !!done[id]);
+      doneBtn.setAttribute('aria-pressed', String(!!done[id]));
+      doneBtn.textContent = done[id] ? 'Выучено' : 'Отметить';
+      paintToc();
+      buzz('medium');
+    }
+  });
+
+  drillEl.addEventListener('click', (e) => {
+    if (e.target.id === 'drill-show') { drillReveal = true; paintDrill(); buzz('light'); }
+    if (e.target.id === 'drill-next') { drillReveal = false; drillI += 1; paintDrill(); buzz('light'); }
+  });
+
   $('#term-close').addEventListener('click', closeTerm);
   $('#term-veil').addEventListener('click', closeTerm);
 
-  $('#term-hard').addEventListener('click', () => {
-    const id = curId();
-    if (!id) return;
-    progress.markHard(id);
-    const variants = termVariants(index[id].term);
-    if (variants.length > 1) {
-      termVar = (termVar + 1) % variants.length;
-      renderTerm(true);
-      const fun = $('#term-fun');
-      if (fun) { fun.classList.remove('flash'); void fun.offsetWidth; fun.classList.add('flash'); fun.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
-    } else {
-      renderTerm(true);
-    }
-    buzz('medium');
-  });
-  $('#term-ok').addEventListener('click', () => {
-    const id = curId();
-    if (id) progress.markKnown(id);
-    buzz('medium');
-    closeTerm();
-  });
+  function popOverlay() {
+    if (termOpen) { closeTerm(); return true; }
+    if (tocOpen) { closeToc(); return true; }
+    if (!searchDrop.hidden) { hideSearch(); searchInput.blur(); return true; }
+    return false;
+  }
 
-  /* ---------- Открытие / закрытие панели ---------- */
   const tgBack = hooks.tg && hooks.tg.BackButton;
   function open() {
     if (isOpen) return;
     isOpen = true;
     hooks.onOpen && hooks.onOpen();
-    show(cur, 0);
     document.body.classList.add('study-open');
     root.classList.add('open');
     root.setAttribute('aria-hidden', 'false');
     btnOpen.setAttribute('aria-expanded', 'true');
-    try { tgBack && tgBack.show(); } catch (e) {}
+    try { tgBack && tgBack.show(); } catch { /* старый клиент */ }
     buzz('medium');
+    requestAnimationFrame(restoreScroll);
     setTimeout(() => { if (isOpen) closeBtn.focus({ preventScroll: true }); }, 400);
   }
   function close() {
     if (!isOpen) return;
+    popOverlay();
     closeTerm();
+    closeToc();
+    hideSearch();
+    saveScroll();
     isOpen = false;
     document.body.classList.remove('study-open');
     root.classList.remove('open');
     root.setAttribute('aria-hidden', 'true');
     btnOpen.setAttribute('aria-expanded', 'false');
-    try { tgBack && tgBack.hide(); } catch (e) {}
+    try { tgBack && tgBack.hide(); } catch { /* старый клиент */ }
     hooks.onClose && hooks.onClose();
     buzz('light');
     btnOpen.focus({ preventScroll: true });
@@ -559,28 +580,20 @@ export function initStudy(hooks = {}) {
 
   btnOpen.addEventListener('click', () => (isOpen ? close() : open()));
   closeBtn.addEventListener('click', close);
-  veil.addEventListener('click', () => { if (!termStack.length) close(); });
+  veil.addEventListener('click', () => { if (!termOpen && !tocOpen) close(); });
 
   try {
-    tgBack && tgBack.onClick(() => {
-      if (!isOpen) return;
-      if (termStack.length) { stepBack(); return; }
-      if (activeTopicId) { activeTopicId = null; show(0, -1); return; }
-      close();
-    });
-  } catch (e) {}
+    tgBack && tgBack.onClick(() => { if (!isOpen) return; popOverlay() || close(); });
+  } catch { /* старый клиент */ }
 
   window.addEventListener('keydown', (e) => {
     if (!isOpen) return;
-    if (e.key === 'Escape') { 
-      if (termStack.length) stepBack(); 
-      else if (activeTopicId) { activeTopicId = null; show(0, -1); }
-      else close();
-    }
-    else if (!termStack.length && !e.target.closest('input')) {
-      if (e.key === 'ArrowRight') go(1);
-      else if (e.key === 'ArrowLeft') go(-1);
-    }
+    if (e.key === 'Escape') popOverlay() || close();
+  });
+
+  document.addEventListener('pointerdown', (e) => {
+    if (!isOpen || searchDrop.hidden) return;
+    if (!e.target.closest('#study-tools')) hideSearch();
   });
 
   let drag = null;
@@ -609,6 +622,13 @@ export function initStudy(hooks = {}) {
     h.addEventListener('pointercancel', end);
   });
 
-  show(cur, 0);
-  return { open, close, show, openTerm };
+  setSub();
+  paintBooks();
+  paintStream();
+  paintToc();
+  paintDict();
+  paintModes();
+  paintDrill();
+
+  return { open, close };
 }
