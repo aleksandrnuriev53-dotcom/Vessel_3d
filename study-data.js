@@ -753,18 +753,21 @@ export const studyData = {
   },
 
   books: [
-    {
-      id: 'dmitriev',
-      icon: '🧭',
-      short: 'Навигация',
-      title: 'Навигация',
-      author: 'Дмитриев',
-      source: 'Дмитриев · «Навигация»',
-      chapters: [
-        { 
-            id: 'dmitriev_ch1', 
-            title: 'Глава 1. Ориентирование наблюдателя на земной поверхности', 
-            topics: [topic_dmitriev_1_1] 
+  {
+            id: 'dmitriev',
+            icon: '🧭',
+            short: 'Навигация',
+            title: 'Навигация',
+            author: 'Дмитриев',
+            source: 'Дмитриев · «Навигация»',
+            chapters: [
+                { 
+                    id: 'dmitriev_ch1', 
+                    title: 'Глава 1. Ориентирование наблюдателя на земной поверхности', 
+                    topics: [topic_dmitriev_1_1] 
+                }
+            ]
+        },
         }
       ],
     },
