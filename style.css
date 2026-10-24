@@ -521,6 +521,54 @@ body.study-open .study-veil { opacity: 1; pointer-events: auto; }
 .ghost-btn.primary { background: rgba(41, 217, 255, 0.22); border-color: var(--accent); }
 .tr-hint { margin: 14px 0 0; font-size: 11.5px; line-height: 1.4; color: rgba(159, 180, 199, 0.75); }
 
+/* ---------- Учебники: липкая панель поиска и оглавления ---------- */
+.b-top { position: sticky; top: 0; z-index: 4; padding: 2px 0 8px; background: linear-gradient(180deg, rgba(14, 26, 44, 0.97) 78%, rgba(14, 26, 44, 0)); }
+.b-row { display: flex; gap: 8px; align-items: center; }
+.b-row .g-search { flex: 1; min-width: 0; }
+.toc-btn { flex: none; padding: 10px 13px; border-radius: 14px; font-size: 13px; font-weight: 700; white-space: nowrap; background: rgba(41, 217, 255, 0.16); border: 1px solid rgba(41, 217, 255, 0.5); }
+.toc[hidden] { display: none; }
+.toc { position: absolute; left: 0; right: 0; top: calc(100% - 4px); max-height: 55vh; overflow-y: auto; padding: 8px; border-radius: 16px; background: #0c182a; border: 1px solid rgba(255, 255, 255, 0.16); box-shadow: 0 14px 36px rgba(0, 0, 0, 0.5); -webkit-overflow-scrolling: touch; }
+.toc-ch { margin: 8px 4px 4px; font-size: 11px; letter-spacing: 0.6px; text-transform: uppercase; color: var(--text-dim); }
+.toc-it { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 8px; border-radius: 12px; text-align: left; }
+.toc-it:active { background: rgba(255, 255, 255, 0.08); }
+.toc-n { flex: none; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; background: rgba(255, 255, 255, 0.1); }
+.toc-t { flex: 1; min-width: 0; font-size: 14px; font-weight: 600; }
+.toc-t small { display: block; margin-top: 1px; font-size: 11.5px; font-weight: 500; color: var(--text-dim); }
+.toc-ck { font-style: normal; font-size: 14px; color: #3cdc8c; opacity: 0; }
+.toc-it[data-st="known"] .toc-ck { opacity: 1; }
+
+.b-head { margin: 4px 0 14px; }
+.b-head h2 { margin: 0; font-size: 22px; }
+.b-head p { margin: 2px 0 10px; font-size: 12.5px; color: var(--text-dim); }
+.b-prog { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--text-dim); }
+.b-bar { flex: 1; height: 6px; border-radius: 99px; overflow: hidden; background: rgba(255, 255, 255, 0.1); }
+.b-bar i { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--accent), #3cdc8c); transition: width 0.4s var(--ease); }
+
+.chapter { margin-bottom: 18px; }
+.ch-title { position: relative; margin: 18px 0 10px; padding-left: 12px; font-size: 13px; letter-spacing: 0.5px; text-transform: uppercase; color: var(--accent); }
+.ch-title::before { content: ""; position: absolute; left: 0; top: 2px; bottom: 2px; width: 3px; border-radius: 3px; background: var(--accent); }
+
+.topic { margin-bottom: 14px; padding: 14px; border-radius: 20px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); }
+.topic.flash { animation: topicFlash 1.6s ease-out; }
+@keyframes topicFlash { 0%, 35% { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(41, 217, 255, 0.3); } 100% { border-color: rgba(255, 255, 255, 0.1); box-shadow: none; } }
+.tp-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.tp-tt { min-width: 0; }
+.tp-tt h4 { margin: 0; font-size: 17px; line-height: 1.25; }
+.tp-meta { display: block; margin-top: 3px; font-size: 12px; color: var(--text-dim); }
+.tp-draft { display: inline-block; margin-left: 8px; padding: 1px 7px; border-radius: 99px; font-style: normal; font-size: 10.5px; font-weight: 700; color: #ffcf5c; background: rgba(255, 207, 92, 0.14); border: 1px solid rgba(255, 207, 92, 0.4); }
+.tp-done { flex: none; padding: 7px 11px; border-radius: 99px; font-size: 12px; font-weight: 700; background: rgba(255, 255, 255, 0.07); border: 1px solid rgba(255, 255, 255, 0.18); transition: background 0.2s, border-color 0.2s; }
+.tp-done::before { content: "○ "; }
+.tp-done[aria-pressed="true"] { background: rgba(60, 220, 140, 0.2); border-color: #3cdc8c; }
+.tp-done[aria-pressed="true"]::before { content: "✓ "; color: #3cdc8c; }
+.tp-terms { display: flex; flex-direction: column; gap: 8px; }
+.g-row.full .g-tx small { display: block; -webkit-line-clamp: unset; overflow: visible; }
+.sr-meta { color: var(--accent) !important; font-size: 11px !important; }
+.g-src { margin: 2px 0 0; font-size: 11px; color: var(--text-dim); }
+#b-results { padding-top: 4px; }
+#b-results[hidden], #b-content[hidden] { display: none; }
+mark { background: rgba(255, 207, 92, 0.35); color: #fff; border-radius: 3px; padding: 0 1px; }
+.tr-modes { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+
 /* Узкие экраны: переключатель в кнопке рентгена скрываем — состояние видно по подсветке и подписи */
 @media (max-width: 430px) {
   .switch { display: none; }
