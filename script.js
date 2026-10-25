@@ -1064,6 +1064,7 @@ function pickMarker(clientX, clientY) {
     return hits.length ? hits[0].object.userData.index : -1;
 }
 }
+}
 
 // Отличаем «тап» от вращения: смещение < 8 px и короткое касание
 let down = null;
