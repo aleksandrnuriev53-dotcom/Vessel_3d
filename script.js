@@ -1045,7 +1045,7 @@ const markers = POINTS.map((p, i) => {
   }));
   halo.renderOrder = 999;
   // Невидимая увеличенная сфера для удобного попадания пальцем
-   const hit = new THREE.Mesh(new THREE.SphereGeometry(1, 8, 6), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  const hit = new THREE.Mesh(new THREE.SphereGeometry(1, 8, 6), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
   hit.userData.index = i;
   [core, halo, hit].forEach((o) => o.position.copy(pos));
   markerGroup.add(core, halo, hit);
@@ -1065,25 +1065,40 @@ function pickMarker(clientX, clientY) {
     return hits.length ? hits[0].object.userData.index : -1;
 }
 
-// Отличаем «тап» от вращения: смещение < 8 px и короткое касание
+// --- УМНАЯ ОБРАБОТКА КАСАНИЙ ДЛЯ ТЕЛЕФОНОВ И ПК ---
+const getPt = (e) => {
+    if (e.clientX !== undefined && e.clientX !== 0) return { x: e.clientX, y: e.clientY };
+    if (e.changedTouches && e.changedTouches.length) return { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY };
+    return { x: 0, y: 0 };
+};
+
 let down = null;
 canvas.addEventListener('pointerdown', (e) => {
-  down = { x: e.clientX, y: e.clientY, t: performance.now() };
-  hideHint();
-  tween = null; // касание прерывает «подлёт» камеры
+    const pt = getPt(e);
+    down = { x: pt.x, y: pt.y, t: performance.now() };
+    hideHint();
+    tween = null; // касание прерывает «подлёт» камеры
 });
+
 canvas.addEventListener('pointerup', (e) => {
-  if (!down) return;
-  const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
-  const dt = performance.now() - down.t;
-  down = null;
-  if (moved < 8 && dt < 600) {
-    const idx = pickMarker(e.clientX, e.clientY);
-    if (idx >= 0) selectPoint(idx);
-  }
+    if (!down) return;
+    const pt = getPt(e);
+    const moved = Math.hypot(pt.x - down.x, pt.y - down.y);
+    const dt = performance.now() - down.t;
+    down = null;
+    
+    // УВЕЛИЧЕННЫЙ ДОПУСК: прощаем скольжение пальца до 20px и удержание до 800 мс
+    if (moved < 20 && dt < 800) {
+        const idx = pickMarker(pt.x, pt.y);
+        if (idx >= 0) selectPoint(idx);
+    }
 });
-canvas.addEventListener('pointermove', (e) => {          // курсор-«рука» на десктопе
-  if (e.pointerType === 'mouse' && !down) canvas.style.cursor = pickMarker(e.clientX, e.clientY) >= 0 ? 'pointer' : 'grab';
+
+canvas.addEventListener('pointermove', (e) => {
+    if (e.pointerType === 'mouse' && !down) {
+        const pt = getPt(e);
+        canvas.style.cursor = pickMarker(pt.x, pt.y) >= 0 ? 'pointer' : 'grab';
+    }
 });
 
 /* ============================================================================
@@ -1350,6 +1365,7 @@ renderer.setAnimationLoop(() => {
     m.core.scale.setScalar(s * pulse * (sel ? 1.25 : 1));
     m.halo.scale.setScalar(s * 5.5 * pulse2 * (sel ? 1.3 : 1));
     m.hit.scale.setScalar(s * 2.4);
+    m.hit.updateMatrixWorld(true); // <--- ДОБАВЛЕНА СИНХРОНИЗАЦИЯ
     m.core.material.color.setHex(sel ? 0xd6fdff : 0x22e6ff);
     m.halo.material.opacity = 0.7 + 0.3 * Math.sin(t * 3.2 + m.phase);
   }
