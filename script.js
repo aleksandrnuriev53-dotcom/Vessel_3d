@@ -12,7 +12,7 @@
    Для мобильных устройств все статические меши после сборки объединяются
    по материалам (mergeGeometries) — это сокращает число draw call до ~40.
    ============================================================================ */
-
+import { createEarthGlobe } from './earth-globe.js';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
@@ -429,6 +429,7 @@ function buildCrane(ship, M, x, yaw) {
     box(0.5, 0.6, 0.4, M.darkSteel, [tip[0], tip[1] - 7.3, 0])           // гак
   );
   ship.add(g);
+   
 }
 
 /** Цепь из звеньев-торов вдоль кривой Катмулла–Рома (якорная цепь) */
@@ -971,6 +972,29 @@ scene.add(grid);
 /* --- Судно --- */
 const { ship, refs, shellMats } = buildShip();
 scene.add(ship);
+// === ИНТЕГРАЦИЯ ГЛОБУСА ===
+const earth = createEarthGlobe({ radius: 15 });
+earth.group.visible = false;
+scene.add(earth.group);
+earth.bindPointer(camera, renderer.domElement);
+
+const toggleBtn = document.getElementById('toggle-view-btn');
+let isShipView = true;
+
+if (toggleBtn) {
+    toggleBtn.addEventListener('click', () => {
+        isShipView = !isShipView;
+        
+        earth.group.visible = !isShipView;
+        
+        ship.visible = isShipView;
+        water.visible = isShipView;
+        grid.visible = isShipView;
+        markerGroup.visible = isShipView; 
+
+        toggleBtn.innerText = isShipView ? '🌐 Показать глобус' : '🚢 Показать судно';
+    });
+}
 
 /* --- Управление камерой --- */
 const controls = new OrbitControls(camera, canvas);
@@ -1293,6 +1317,9 @@ renderer.setAnimationLoop(() => {
   if (studyFrozen) return;                           // панель «Шпаргалки» открыта — рендер на паузе
   const dt = Math.min(clock.getDelta(), 0.05);
   const t = clock.elapsedTime;
+   if (earth.group.visible) {
+      earth.update(t);
+  }
 
   // Плавный подлёт камеры
   if (tween) {
