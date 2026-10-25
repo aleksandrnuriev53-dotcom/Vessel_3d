@@ -124,7 +124,7 @@ function sectionParams(x) {
   const t = (x + S.HALF) / S.L; // 0 — корма, 1 — нос
   let B;
   if (t < 0.14) { const u = t / 0.14; B = S.BEAM * (0.5 + 0.5 * (1 - (1 - u) * (1 - u))); } // транцевая корма
-  else if (t <= 0.7) B = S.BEAM;                                                              // параллельная вставка
+  else if (t <= 0.7) B = S.BEAM;                                                            // параллельная вставка
   else { const u = Math.min((t - 0.7) / 0.3, 1); B = S.BEAM * (1 - Math.pow(u, 2.2)); }       // заострение носа
   B = Math.max(B, 0.12);
 
@@ -361,7 +361,7 @@ function buildInterior(ship, M) {
   for (let k = 0; k < S.HOLDS; k++) {
     for (const o of [4, 8, 12]) frameXs.push(holdStart(k) + o);      // трюмы
   }
-  frameXs.push(43.5, 47, 50.5, 54);                                  // форпик
+  frameXs.push(43.5, 47, 50.5, 54);                                // форпик
   for (const x of frameXs) {
     const outer = contour(x, 0.3, 10.7);
     const inner = contour(x, 0.95, 10.1);
@@ -525,7 +525,7 @@ function buildDeck(ship, M) {
   // Клюзы, якоря и цепи по обоим бортам
   const hx = 52, hB = sectionParams(hx).B;
   for (const s of [-1, 1]) {
-    add(ship, cyl(0.32, 0.32, 0.12, M.black, [hx, 12.4, s * hB], [Math.PI / 2, 0, 0], 14));       // клюз
+    add(ship, cyl(0.32, 0.32, 0.12, M.black, [hx, 12.4, s * hB], [Math.PI / 2, 0, 0], 14));        // клюз
     const az = s * (hB + 0.55);
     add(ship,
       box(0.26, 2.5, 0.26, M.darkSteel, [hx, 10.3, az]),                                           // веретено
@@ -581,11 +581,11 @@ function buildSuperstructure(ship, M, refs) {
             box(0.15, 0.15, 5.0, M.steel, [-42.5, 29.2, 0]),
             sph(0.22, M.lampWhite, [-42.5, 31.4, 0], [1, 1, 1], 8, 6),
             sph(0.18, M.lampWhite, [-42.5, 29.2, 2.4], [1, 1, 1], 8, 6),
-            rod([-44, 24.8, 4.8], [-44, 28.8, 4.8], 0.05, M.steel, 4),                  // УКВ-антенны
+            rod([-44, 24.8, 4.8], [-44, 28.8, 4.8], 0.05, M.steel, 4),                 // УКВ-антенны
             rod([-38.8, 24.8, -4.8], [-38.8, 28.5, -4.8], 0.05, M.steel, 4),
-            sph(0.4, M.white, [-43.8, 25.2, 3.4], [1, 1, 1], 12, 8),                    // GPS-купола
+            sph(0.4, M.white, [-43.8, 25.2, 3.4], [1, 1, 1], 12, 8),                   // GPS-купола
             sph(0.4, M.white, [-43.8, 25.2, -3.4], [1, 1, 1], 12, 8),
-            sph(1.0, M.white, [-45.3, 25.8, -3.2], [1, 1, 1], 14, 10));                  // спутниковый купол
+            sph(1.0, M.white, [-45.3, 25.8, -3.2], [1, 1, 1], 14, 10));                // спутниковый купол
   // Радары: пьедестал статичен (объединится), антенна-сканер вращается в animate()
   for (const [z, w] of [[2.4, 2.6], [-2.4, 3.6]]) {
     add(ship, cyl(0.25, 0.3, 0.9, M.darkSteel, [-40.2, 25.25, z]));
@@ -1055,6 +1055,7 @@ const markers = POINTS.map((p, i) => {
 
 const raycaster = new THREE.Raycaster();
 const ndc = new THREE.Vector2();
+
 function pickMarker(clientX, clientY) {
     if (!markerGroup.visible) return -1;
     const r = canvas.getBoundingClientRect();
@@ -1062,8 +1063,6 @@ function pickMarker(clientX, clientY) {
     raycaster.setFromCamera(ndc, camera);
     const hits = raycaster.intersectObjects(hitMeshes, false);
     return hits.length ? hits[0].object.userData.index : -1;
-}
-}
 }
 
 // Отличаем «тап» от вращения: смещение < 8 px и короткое касание
