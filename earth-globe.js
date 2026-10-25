@@ -875,7 +875,8 @@ export function createEarthGlobe(options = {}) {
       color: col, transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending,
     }));
     ring.rotation.x = -Math.PI / 2; ring.position.y = 0.002;
-     const hit = new THREE.Mesh(new THREE.SphereGeometry(0.075, 8, 6), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+     const hit = new THREE.Mesh(new THREE.SphereGeometry(0.35, 12, 10), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+    hit.position.y = 0.05;
     hit.position.y = 0.05;
     pivot.add(stem, head, halo, ring, hit);
     [stem, head, halo, ring].forEach((o) => { o.renderOrder = 7; });
