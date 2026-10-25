@@ -707,7 +707,6 @@ export function createEarthGlobe(options = {}) {
     tube(equator, [1.0, 0.72, 0.18]);
     tube(greenwich, [1.0, 0.3, 0.75]);
     
-    // Севморпуть (Северный морской путь)
     const nsrCurve = new THREE.CatmullRomCurve3([
       latLonToVector3(68.96, 33.08, 1.002), 
       latLonToVector3(73.5, 50, 1.002),
@@ -875,8 +874,7 @@ export function createEarthGlobe(options = {}) {
       color: col, transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending,
     }));
     ring.rotation.x = -Math.PI / 2; ring.position.y = 0.002;
-     const hit = new THREE.Mesh(new THREE.SphereGeometry(0.35, 12, 10), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
-    hit.position.y = 0.05;
+    const hit = new THREE.Mesh(new THREE.SphereGeometry(0.45, 8, 6), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
     hit.position.y = 0.05;
     pivot.add(stem, head, halo, ring, hit);
     [stem, head, halo, ring].forEach((o) => { o.renderOrder = 7; });
@@ -934,7 +932,7 @@ export function createEarthGlobe(options = {}) {
     camRef = camera; domRef = dom;
     const host = dom.parentElement || document.body;
     tip = document.createElement('div');
-    tip.style.cssText = 'position:absolute;left:0;top:0;z-index:15;pointer-events:none;opacity:0;max-width:260px;'
+    tip.style.cssText = 'position:absolute;left:0;top:0;z-index:999999;pointer-events:none;opacity:0;max-width:260px;'
       + 'padding:12px 14px;border-radius:14px;color:#eaf3fb;font:13px/1.4 -apple-system,"Segoe UI",Roboto,Arial,sans-serif;'
       + 'background:linear-gradient(145deg,rgba(255,255,255,.14),rgba(255,255,255,.03)),rgba(14,27,46,.85);'
       + 'border:1px solid rgba(255,255,255,.2);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);'
@@ -942,44 +940,62 @@ export function createEarthGlobe(options = {}) {
     host.appendChild(tip);
 
     const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
-    const pick = (e) => {
+    
+    const getPt = (e) => {
+        if (e.clientX !== undefined) return { x: e.clientX, y: e.clientY };
+        if (e.changedTouches && e.changedTouches.length) return { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY };
+        return { x: 0, y: 0 };
+    };
+
+    const pick = (x, y) => {
       const r = dom.getBoundingClientRect();
-      ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
+      ndc.set(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1);
       ray.setFromCamera(ndc, camera);
       for (const h of ray.intersectObjects(hitMeshes, false)) {
         const m = h.object.userData.marker;
         if (!isVisibleInTree(m.pivot)) continue;
         m.pivot.getWorldPosition(_wp);
         _wn.set(0, 1, 0).transformDirection(m.pivot.matrixWorld);
-        if (_wn.dot(_cp.copy(camera.position).sub(_wp)) > 0) return m;
+        const camDir = _cp.copy(camera.position).sub(_wp).normalize();
+        if (_wn.dot(camDir) > -0.2) return m;
       }
       return null;
     };
+    
     const show = (m) => {
       tip.innerHTML = `<b style="font-size:15px;display:block;margin-bottom:4px;">${m.def.title}</b>`
         + `<div style="color:#7fe3ff;font-size:11.5px;margin-bottom:8px;font-family:monospace;">${m.def.coords}</div>`
         + `<div style="color:#c9d9e8;font-size:13px">${m.def.note}</div>`;
     };
+    
     let prevCursor = '', down = null;
     const onMove = (e) => {
       if (e.pointerType !== 'mouse') return;
-      const m = pick(e);
+      const pt = getPt(e);
+      const m = pick(pt.x, pt.y);
       if (m !== hovered) {
         hovered = m;
         if (m) { prevCursor = dom.style.cursor; dom.style.cursor = 'pointer'; show(m); }
         else dom.style.cursor = prevCursor;
       }
     };
-    const onDown = (e) => { down = { x: e.clientX, y: e.clientY }; };
+    
+    const onDown = (e) => { 
+        const pt = getPt(e);
+        down = { x: pt.x, y: pt.y }; 
+    };
+    
     const onUp = (e) => {
       if (!down) return;
-      const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
+      const pt = getPt(e);
+      const moved = Math.hypot(pt.x - down.x, pt.y - down.y);
       down = null;
-       if (moved > 8) return;
-      const m = pick(e);
+      if (moved > 15) return; 
+      const m = pick(pt.x, pt.y);
       pinned = m && m !== pinned ? m : null;
       if (pinned) show(pinned);
     };
+    
     dom.addEventListener('pointermove', onMove);
     dom.addEventListener('pointerdown', onDown);
     dom.addEventListener('pointerup', onUp);
@@ -998,7 +1014,8 @@ export function createEarthGlobe(options = {}) {
     if (!m || !isVisibleInTree(m.pivot)) { tip.style.opacity = '0'; return; }
     m.head.getWorldPosition(_wp);
     _wn.set(0, 1, 0).transformDirection(m.pivot.matrixWorld);
-    if (_wn.dot(_cp.copy(camRef.position).sub(_wp)) <= 0) { tip.style.opacity = '0'; return; }
+    const camDir = _cp.copy(camRef.position).sub(_wp).normalize();
+    if (_wn.dot(camDir) <= -0.2) { tip.style.opacity = '0'; return; }
     _wp.project(camRef);
     const r = domRef.getBoundingClientRect(), pr = (tip.parentElement || document.body).getBoundingClientRect();
     const x = r.left - pr.left + (_wp.x * 0.5 + 0.5) * r.width;
@@ -1024,6 +1041,8 @@ export function createEarthGlobe(options = {}) {
       m.pivot.position.copy(_d);
       surfaceNormalJS(m.dir, _n);
       m.pivot.quaternion.copy(q.setFromUnitVectors(_up, _n));
+      m.pivot.updateMatrixWorld(true); 
+
       const hv = hovered === m || pinned === m ? 1 : 0;
       m.hover += (hv - m.hover) * Math.min(1, dt * 10);
       m.pivot.scale.setScalar(1 + 0.3 * m.hover);
@@ -1032,7 +1051,6 @@ export function createEarthGlobe(options = {}) {
       m.ring.material.opacity = 0.85 * (1 - ph);
       m.halo.scale.setScalar(0.17 * (1 + 0.16 * Math.sin(time * 3.1 + m.phase)));
       
-      // Анимация пасхалки
       if (m.def.id === 'secret_heart') {
         m.head.rotation.y = time * 1.5;
         const beat = 1 + 0.2 * Math.sin(time * 8.0);
