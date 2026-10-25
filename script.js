@@ -1045,7 +1045,7 @@ const markers = POINTS.map((p, i) => {
   }));
   halo.renderOrder = 999;
   // Невидимая увеличенная сфера для удобного попадания пальцем
-  const hit = new THREE.Mesh(new THREE.SphereGeometry(1, 8, 6), new THREE.MeshBasicMaterial({ visible: false }));
+   const hit = new THREE.Mesh(new THREE.SphereGeometry(1, 8, 6), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
   hit.userData.index = i;
   [core, halo, hit].forEach((o) => o.position.copy(pos));
   markerGroup.add(core, halo, hit);
