@@ -875,7 +875,7 @@ export function createEarthGlobe(options = {}) {
       color: col, transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending,
     }));
     ring.rotation.x = -Math.PI / 2; ring.position.y = 0.002;
-    const hit = new THREE.Mesh(new THREE.SphereGeometry(0.075, 8, 6), new THREE.MeshBasicMaterial({ visible: false }));
+     const hit = new THREE.Mesh(new THREE.SphereGeometry(0.075, 8, 6), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
     hit.position.y = 0.05;
     pivot.add(stem, head, halo, ring, hit);
     [stem, head, halo, ring].forEach((o) => { o.renderOrder = 7; });
@@ -974,7 +974,7 @@ export function createEarthGlobe(options = {}) {
       if (!down) return;
       const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
       down = null;
-      if (moved > 8 || e.pointerType === 'mouse') return;
+       if (moved > 8) return;
       const m = pick(e);
       pinned = m && m !== pinned ? m : null;
       if (pinned) show(pinned);
