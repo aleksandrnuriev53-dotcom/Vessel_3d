@@ -1056,9 +1056,10 @@ const markers = POINTS.map((p, i) => {
 const raycaster = new THREE.Raycaster();
 const ndc = new THREE.Vector2();
 function pickMarker(clientX, clientY) {
+  if (!markerGroup.visible) return -1; // <-- ДОБАВЬ ЭТУ СТРОКУ, она отключит клики по судну, когда оно скрыто
   const r = canvas.getBoundingClientRect();
   ndc.set(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
-  raycaster.setFromCamera(ndc, camera);
+  // ... дальше остальной код функции
   const hits = raycaster.intersectObjects(hitMeshes, false);
   return hits.length ? hits[0].object.userData.index : -1;
 }
