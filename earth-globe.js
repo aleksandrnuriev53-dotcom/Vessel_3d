@@ -475,7 +475,7 @@ void main(){
 }`;
 
 /* ============================================================================
-   5. ДАННЫЕ: течения, маркеры с пасхалкой для Мурманска
+   5. ДАННЫЕ: течения, маркеры с пасхалкой
    ============================================================================ */
 const CURRENTS = [
   { id: 'gulfstream', color: [1.0, 0.5, 0.12], count: 150, speed: 0.045,
@@ -485,18 +485,30 @@ const CURRENTS = [
 ];
 
 const MARKERS = [
-  { id: 'murmansk', lat: 68.96, lon: 33.08, color: 0xff2255, // Красный для сердечка
-    title: 'Мурманск · МГТУ / МАУ', coords: '68.96° с. ш., 33.08° в. д.',
-    note: '<b style="color:#ffb3c6">Дашуля, я тебя обожаю ❤️</b><br>Самый надежный ориентир в любом море!' },
+  { id: 'secret_heart', lat: 42.365, lon: 10.921, color: 0xff2255, 
+    title: 'Особая точка', coords: '42.365° с. ш., 10.921° в. д.',
+    note: '<b style="color:#ffb3c6">Дашуля, я тебя обожаю ❤️</b><br>Нам любое море по колено, ты справишься любимность &lt;3' },
+  { id: 'suez', lat: 30.585, lon: 32.329, color: 0x44ffaa,
+    title: 'Суэцкий канал', coords: '30.58° с. ш., 32.32° в. д.',
+    note: 'Один из важнейших водных путей мира. Позволяет судам следовать из Европы в Азию без огибания Африки, экономя около 8000 км пути.' },
+  { id: 'panama', lat: 9.080, lon: -79.680, color: 0x44ffaa,
+    title: 'Панамский канал', coords: '9.08° с. ш., 79.68° з. д.',
+    note: 'Соединяет Тихий и Атлантический океаны через систему шлюзов. Транзит среднего судна занимает около 8–10 часов.' },
+  { id: 'gibraltar', lat: 35.974, lon: -5.580, color: 0x44ffaa,
+    title: 'Гибралтарский пролив', coords: '35.97° с. ш., 5.58° з. д.',
+    note: 'Узкий пролив (всего 14 км в самой узкой части), соединяющий Средиземное море с Атлантическим океаном. Зона интенсивного судоходства.' },
+  { id: 'malacca', lat: 2.428, lon: 101.854, color: 0x44ffaa,
+    title: 'Малаккский пролив', coords: '2.42° с. ш., 101.85° в. д.',
+    note: 'Главный морской путь между Индийским и Тихим океанами. Одно из самых загруженных судоходных мест планеты.' },
   { id: 'pole', lat: 90, lon: 0, color: 0xe6f6ff,
     title: 'Северный полюс', coords: '90° с. ш.',
-    note: 'Все меридианы сходятся, долготы нет, любое направление отсюда — на юг.' },
+    note: 'Все меридианы сходятся, долготы нет, любое направление отсюда — строго на юг.' },
   { id: 'null', lat: 0, lon: 0, color: 0xffcc33,
     title: 'Точка отсчёта · Null Island', coords: '0° / 0°',
-    note: 'Пересечение экватора и Гринвичского меридиана в Гвинейском заливе. Острова нет — только метеобуй.' },
+    note: 'Место пересечения экватора и Гринвичского меридиана в Гвинейском заливе. Островов здесь нет — только метеобуй.' },
   { id: 'horn', lat: -55.98, lon: -67.26, color: 0xff5a2a, layer: 'capeHorn',
     title: 'Мыс Горн', coords: '55.98° ю. ш., 67.26° з. д.',
-    note: 'Пролив Дрейка, «Неистовые пятидесятые»: западные ветры без преград и волны 15–20 м. «Кладбище парусников».' },
+    note: 'Пролив Дрейка, «Неистовые пятидесятые»: западные ветры дуют без преград, поднимая волны до 20 метров. Настоящее «Кладбище кораблей».' },
 ];
 
 /* ============================================================================
@@ -516,7 +528,7 @@ function createHeartGeometry() {
   
   const geo = new THREE.ExtrudeGeometry( heartShape, { depth: 2, bevelEnabled: true, bevelSegments: 2, steps: 1, bevelSize: 0.5, bevelThickness: 0.5 } );
   geo.center();
-  geo.rotateX(Math.PI); // Переворачиваем, т.к. 2D координаты рисуются сверху вниз
+  geo.rotateX(Math.PI);
   geo.scale(0.0015, 0.0015, 0.0015);
   return geo;
 }
@@ -694,6 +706,35 @@ export function createEarthGlobe(options = {}) {
     };
     tube(equator, [1.0, 0.72, 0.18]);
     tube(greenwich, [1.0, 0.3, 0.75]);
+    
+    // Севморпуть (Северный морской путь)
+    const nsrCurve = new THREE.CatmullRomCurve3([
+      latLonToVector3(68.96, 33.08, 1.002), 
+      latLonToVector3(73.5, 50, 1.002),
+      latLonToVector3(76, 80, 1.002),
+      latLonToVector3(77, 105, 1.002),
+      latLonToVector3(74, 135, 1.002),
+      latLonToVector3(70, 170, 1.002),
+      latLonToVector3(66, -169, 1.002), 
+    ], false, 'catmullrom', 0.1);
+
+    const nsrPts = [], nsrT = [];
+    for(let i=0; i<100; i++) {
+        const a = nsrCurve.getPointAt(i/100).normalize();
+        const b = nsrCurve.getPointAt((i+1)/100).normalize();
+        nsrPts.push(a.x, a.y, a.z, b.x, b.y, b.z);
+        nsrT.push(i/100, (i+1)/100);
+    }
+    const nsrGeo = new THREE.BufferGeometry();
+    nsrGeo.setAttribute('position', new THREE.Float32BufferAttribute(nsrPts, 3));
+    nsrGeo.setAttribute('aT', new THREE.Float32BufferAttribute(nsrT, 1));
+    const nsrMat = mat(LINE_VS, LINE_FS, {
+        uColor: { value: new THREE.Color(0.8, 0.9, 1.0) }, uAlpha: { value: 0.8 }, uDash: { value: 30 }, uPulse: { value: 0 }, uAlt: { value: 0.005 }
+    }, additive);
+    const nsrLine = new THREE.LineSegments(nsrGeo, nsrMat);
+    nsrLine.renderOrder = 3;
+    layers.grid.add(nsrLine);
+    addLabel(layers.grid, 'Северный морской путь', 75, 90, 0.04, '#aef0ff');
 
     addLabel(layers.grid, 'Экватор 0°', 0, -35, 0.035, '#ffd98a');
     addLabel(layers.grid, 'Гринвич 0°', 38, 0, 0.035, '#ffb3e6');
@@ -822,8 +863,7 @@ export function createEarthGlobe(options = {}) {
     const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.0022, 0.0022, 0.07, 6), new THREE.MeshBasicMaterial({ color: col }));
     stem.position.y = 0.035;
     
-    // Вшиваем пасхалку — если маркер Мурманск, генерируем форму 3D-сердца
-    const isHeart = def.id === 'murmansk';
+    const isHeart = def.id === 'secret_heart';
     const headGeo = isHeart ? createHeartGeometry() : new THREE.SphereGeometry(0.013, 16, 12);
     const headMat = new THREE.MeshBasicMaterial({ color: isHeart ? col : col.clone().lerp(white, 0.55) });
     
@@ -903,7 +943,7 @@ export function createEarthGlobe(options = {}) {
     const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
     const pick = (e) => {
       const r = dom.getBoundingClientRect();
-      ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+      ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
       ray.setFromCamera(ndc, camera);
       for (const h of ray.intersectObjects(hitMeshes, false)) {
         const m = h.object.userData.marker;
@@ -992,9 +1032,9 @@ export function createEarthGlobe(options = {}) {
       m.halo.scale.setScalar(0.17 * (1 + 0.16 * Math.sin(time * 3.1 + m.phase)));
       
       // Анимация пасхалки
-      if (m.def.id === 'murmansk') {
-        m.head.rotation.y = time * 1.5; // плавное вращение сердечка
-        const beat = 1 + 0.2 * Math.sin(time * 8.0); // сильное сердцебиение
+      if (m.def.id === 'secret_heart') {
+        m.head.rotation.y = time * 1.5;
+        const beat = 1 + 0.2 * Math.sin(time * 8.0);
         m.head.scale.setScalar(beat);
       }
     }
