@@ -412,10 +412,19 @@ function buildInterior(ship, M) {
   };
   for (const z of [-5.4, 5.4]) for (const cx of [-47, -41]) dieselGen(cx, z);
 
-  // Главный распределительный щит (ГРЩ) у носовой переборки МО + сигнальные лампы
-  add(ship, box(0.9, 3.0, 5.0, M.darkSteel, [-32.8, FLOOR + 1.5, 0]));
-  for (let i = -2; i <= 2; i++) add(ship, box(0.05, 0.16, 0.16, i % 2 ? M.lampGreen : M.lampRed, [-33.27, FLOOR + 2.3, i * 0.85]));
+  // --- ЦПУ (Центральный пост управления) и ГРЩ ---
+  // Звукоизолированная рубка механиков со стеклом, смотрящим на главный двигатель
+  add(ship, box(4.0, 3.2, 7.5, M.white, [-32.5, FLOOR + 1.6, 0])); // корпус ЦПУ
+  add(ship, box(0.1, 1.2, 5.0, M.glass, [-34.5, FLOOR + 1.7, 0])); // обзорное окно
+  add(ship, box(0.9, 2.6, 5.0, M.darkSteel, [-31.5, FLOOR + 1.3, 0])); // ГРЩ внутри ЦПУ
+  for (let i = -2; i <= 2; i++) add(ship, box(0.05, 0.16, 0.16, i % 2 ? M.lampGreen : M.lampRed, [-31.95, FLOOR + 2.1, i * 0.85]));
 
+  // --- Баллоны пускового воздуха (Air Receivers) ---
+  // Огромные желтые резервуары со сжатым воздухом для запуска главного двигателя
+  for (const z of [4.5, 6.2]) {
+    add(ship, cyl(0.65, 0.65, 3.8, M.yellow, [-33.5, FLOOR + 1.9, z], [0, 0, 0], 16));
+    add(ship, sph(0.65, M.yellow, [-33.5, FLOOR + 3.8, z], [1, 0.5, 1], 16, 8)); // сферическая крышка
+  }
   // --- Вспомогательный котёл: вертикальный цилиндр с куполом, горелкой и водомерной колонкой ---
   const bx = -54, bz = -4.6;
   add(ship,
@@ -889,48 +898,19 @@ const diagPropeller = () => svg('Гребной винт и руль', `
   ${L(['Баллер'], 298, 38, 'middle', 267, 46)}
   ${L(['Кормовой бульб'], 112, 24, 'middle', 174, 92)}`);
 
-const diagMechanics = () => svg('Судовая механика: машинное отделение, вид сверху', `
-  <path class="hullf" d="M304 40H170L158 40.3L141 41.6L124 44.1L107 47.7L90 52.4L73 58.4L56 65V115L73 121.6L90 127.6L107 132.3L124 135.9L141 138.4L158 139.7L170 140H304"/>
-  <path class="thin dash" d="M20 90H304"/>
-  <path class="thin" d="M73 58V122M255 40V140"/>
-  <text class="lbl" x="160" y="11" text-anchor="middle">Машинное отделение · вид сверху</text>
-  <text class="lbl" x="300" y="94" text-anchor="end">нос →</text>
+// --- ЦПУ (Центральный пост управления) и ГРЩ ---
+  // Звукоизолированная рубка механиков со стеклом, смотрящим на главный двигатель
+  add(ship, box(4.0, 3.2, 7.5, M.white, [-32.5, FLOOR + 1.6, 0])); // корпус ЦПУ
+  add(ship, box(0.1, 1.2, 5.0, M.glass, [-34.5, FLOOR + 1.7, 0])); // обзорное окно
+  add(ship, box(0.9, 2.6, 5.0, M.darkSteel, [-31.5, FLOOR + 1.3, 0])); // ГРЩ внутри ЦПУ
+  for (let i = -2; i <= 2; i++) add(ship, box(0.05, 0.16, 0.16, i % 2 ? M.lampGreen : M.lampRed, [-31.95, FLOOR + 2.1, i * 0.85]));
 
-  <rect class="steel" x="15" y="70" width="22" height="40"/>
-  <rect class="dark" x="6" y="85" width="9" height="10"/>
-  <path class="thin" d="M15 87L21 77M15 93L21 103"/>
-  <rect class="accf" x="21" y="72" width="10" height="9"/><rect class="accf" x="21" y="99" width="10" height="9"/>
-  <rect class="bronze" x="24" y="80" width="4" height="20"/>
-
-  <path class="acc" d="M124 90H42"/>
-  <ellipse class="bronze" cx="39" cy="90" rx="3.5" ry="14"/>
-
-  <circle class="orange" cx="97" cy="67" r="8"/><circle class="dark" cx="97" cy="67" r="3"/>
-  <rect class="dark" x="106" y="64" width="6" height="6"/>
-  <path class="warm dash" d="M97 67L143 90"/>
-
-  <circle class="steel" cx="95" cy="113" r="5"/><circle class="steel" cx="109" cy="113" r="5"/>
-  <circle class="dark" cx="95" cy="113" r="2"/><circle class="dark" cx="109" cy="113" r="2"/>
-
-  ${[63, 117].map((cy) => `
-  <rect class="steel" x="131" y="${cy - 5.5}" width="18" height="11"/><rect class="yellow" x="149" y="${cy - 5.5}" width="10" height="11"/>
-  <rect class="steel" x="172" y="${cy - 5.5}" width="18" height="11"/><rect class="yellow" x="190" y="${cy - 5.5}" width="10" height="11"/>`).join('')}
-
-  <rect class="steel" x="127" y="80" width="75" height="20"/>
-  ${[0, 1, 2, 3, 4, 5].map((i) => `<rect class="accf" x="${(129.4 + i * 12.24).toFixed(1)}" y="84" width="9.5" height="12"/>`).join('')}
-  <rect class="dark" x="203" y="85" width="11" height="10"/>
-  <path class="warm" d="M205 90H143"/>
-  <circle class="orange" cx="143" cy="90" r="4"/>
-
-  <rect class="dark" x="238" y="77" width="6" height="26"/>
-
-  ${L(['Рулевая машина'], 4, 24, 'start', 26, 76)}
-  ${L(['Вспомогательный', 'котёл'], 100, 24, 'start', 97, 63)}
-  ${L(['Дизель-генераторы', '(СЭС)'], 205, 24, 'start', 182, 60)}
-  ${L(['ГРЩ'], 266, 76, 'start', 242, 80)}
-  ${L(['Валопровод'], 68, 142, 'middle', 68, 91)}
-  ${L(['Сепараторы', 'топлива'], 108, 158, 'start', 96, 117)}
-  ${L(['Главный двигатель', 'выхлоп — вверх, в трубу'], 172, 158, 'start', 165, 97)}`);
+  // --- Баллоны пускового воздуха (Air Receivers) ---
+  // Огромные желтые резервуары со сжатым воздухом для запуска главного двигателя
+  for (const z of [4.5, 6.2]) {
+    add(ship, cyl(0.65, 0.65, 3.8, M.yellow, [-33.5, FLOOR + 1.9, z], [0, 0, 0], 16));
+    add(ship, sph(0.65, M.yellow, [-33.5, FLOOR + 3.8, z], [1, 0.5, 1], 16, 8)); // сферическая крышка
+  }
 
 /**
  * Метки (маркеры) на модели.
