@@ -618,3 +618,6 @@ mark { background: rgba(255, 207, 92, 0.35); color: #fff; border-radius: 3px; pa
     transform: scale(1.05);
 }
 }
+body.card-open #toggle-view-btn {
+    display: none !important;
+}
