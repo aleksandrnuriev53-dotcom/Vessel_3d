@@ -1344,23 +1344,28 @@ function selectPoint(i) {
   card.classList.add('open');
   card.setAttribute('aria-hidden', 'false');
   document.body.classList.add('card-open');
-  requestAnimationFrame(() => {                      // передаём высоту карточки в CSS (док с кнопкой едет вверх)
+  
+  if (toggleBtn) toggleBtn.style.display = 'none'; // Прячем кнопку глобуса
+
+  requestAnimationFrame(() => {                      
     document.documentElement.style.setProperty('--card-h', card.offsetHeight + 'px');
     flyToPoint(i);
   });
   [...chipsEl.children].forEach((c, k) => c.classList.toggle('active', k === i));
-  if (p.xray && !xrayOn) setXray(true);              // внутренние детали — сразу включаем рентген
+  if (p.xray && !xrayOn) setXray(true);              
   hideHint();
   haptic('light');
   try { if (tg && tg.BackButton && tg.isVersionAtLeast && tg.isVersionAtLeast('6.1')) tg.BackButton.show(); } catch (e) {}
 }
-
 function closeCard() {
   selected = -1;
   card.classList.remove('open');
   card.setAttribute('aria-hidden', 'true');
   document.body.classList.remove('card-open');
   [...chipsEl.children].forEach((c) => c.classList.remove('active'));
+  
+  if (toggleBtn) toggleBtn.style.display = ''; // Возвращаем кнопку глобуса
+
   try { if (tg && tg.BackButton && tg.isVersionAtLeast && tg.isVersionAtLeast('6.1')) tg.BackButton.hide(); } catch (e) {}
 }
 $('#card-close').addEventListener('click', () => { closeCard(); haptic(); });
