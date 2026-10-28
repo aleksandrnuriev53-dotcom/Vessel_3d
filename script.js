@@ -1,14 +1,7 @@
 /* ============================================================================
    3D АТЛАС АНАТОМИИ СУДНА — Telegram Mini App
    ----------------------------------------------------------------------------
-   Всё судно строится процедурно из примитивов Three.js (внешних моделей нет):
-     1. Корпус — «лофтинг» по сечениям (красная подводная часть + чёрный борт),
-        бульб носа и кормы, транец, палуба, бак.
-     2. Внутренний набор — двойное дно, флоры, стрингеры, шпангоуты, переборки,
-        главный двигатель (виден в режиме «Разрез / Рентген»).
-     3. Палубное оборудование — люки, краны, леера, швартовное и якорное
-        устройства, вентиляторы.
-     4. Надстройка в корме — 4 яруса, мостик, окна, мачта, радары, труба.
+   Всё судно строится процедурно из примитивов Three.js (внешних моделей нет).
    Для мобильных устройств все статические меши после сборки объединяются
    по материалам (mergeGeometries) — это сокращает число draw call до ~40.
    ============================================================================ */
@@ -17,13 +10,10 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { initStudy } from './study.js';   // «Шпаргалки»: контент studyData + логика панели
-
-// <<BUILD-START>>  (маркер для автоматической проверки генератора судна)
+import { initStudy } from './study.js';
 
 /* ============================================================================
-   1. ПАРАМЕТРЫ СУДНА (единицы условные: 1 ед. ≈ 2 м)
-   Ось X — вдоль судна (нос = +X, корма = −X), Y — вверх, Z — поперёк.
+   1. ПАРАМЕТРЫ СУДНА
    ============================================================================ */
 const S = {
   L: 120, HALF: 60,      // длина судна
@@ -35,12 +25,10 @@ const S = {
   PITCH: 17.5,           // шаг между трюмами
   HOLD_LEN: 16,          // длина трюма
   DB_H: 1.7,             // высота двойного дна (уровень танк-топа)
-  // Положение поперечных переборок: ахтерпик, МО/трюм №1, между трюмами, таранная
   BULKHEADS: [-57.5, -30.75, -13.25, 4.25, 21.75, 39.25],
 };
 const holdStart = (k) => S.HOLD_X0 + k * S.PITCH;
 
-/* ---------- Простые помощники для создания мешей ---------- */
 const UP = new THREE.Vector3(0, 1, 0);
 const mk = (geo, mat, p = [0, 0, 0], r = [0, 0, 0]) => {
   const m = new THREE.Mesh(geo, mat);
@@ -55,7 +43,6 @@ const sph = (rad, mat, p, sc = [1, 1, 1], ws = 16, hs = 12) => {
   m.scale.set(sc[0], sc[1], sc[2]);
   return m;
 };
-/** Цилиндр-стержень между двумя точками (леера, тросы, антенны) */
 const rod = (a, b, r, mat, seg = 6) => {
   const va = new THREE.Vector3(a[0], a[1], a[2]);
   const vb = new THREE.Vector3(b[0], b[1], b[2]);
@@ -68,8 +55,6 @@ const add = (parent, ...objs) => { objs.forEach((o) => parent.add(o)); return pa
 
 /* ============================================================================
    2. МАТЕРИАЛЫ
-   Материалы «внешней оболочки» помечаются userData.shell = true —
-   именно им режим «Разрез / Рентген» меняет прозрачность.
    ============================================================================ */
 function createMaterials() {
   const DS = THREE.DoubleSide;
@@ -77,14 +62,11 @@ function createMaterials() {
   const lamp = (color) => new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 1.6, roughness: 0.4 });
 
   const M = {
-    // --- внешняя оболочка (прозрачнеет в режиме рентгена) ---
     hullRed:   std(0x6e1016, { roughness: 0.55, metalness: 0.25, side: DS }),
     hullBlack: std(0x15171b, { roughness: 0.42, metalness: 0.4, side: DS }),
     deck:      std(0x4c3b37, { roughness: 0.85, metalness: 0.1, side: DS }),
     hatch:     std(0x37594b, { roughness: 0.6, metalness: 0.3 }),
     coaming:   std(0x8b2a23, { roughness: 0.6, metalness: 0.3 }),
-
-    // --- палуба и надстройка (остаются непрозрачными) ---
     redPaint:  std(0x6e1016, { roughness: 0.55 }),
     white:     std(0xf2f5f8, { roughness: 0.5, metalness: 0.08 }),
     trim:      std(0x5c656e, { roughness: 0.55, metalness: 0.5 }),
@@ -99,14 +81,12 @@ function createMaterials() {
     lampRed:   lamp(0xff2a2a),
     lampGreen: lamp(0x22ff66),
     lampWhite: lamp(0xffffff),
-
-    // --- внутренний набор: разные серые/металлические оттенки для контраста ---
-    frame:     std(0x9fb6cb, { roughness: 0.32, metalness: 0.85, side: DS }), // шпангоуты — светлая сталь
-    bulkhead:  std(0x5d6873, { roughness: 0.5, metalness: 0.7, side: DS }),   // переборки — тёмно-серые
-    tanktop:   std(0x7d848c, { roughness: 0.45, metalness: 0.7 }),            // настил второго дна
-    girder:    std(0xb5bcc4, { roughness: 0.3, metalness: 0.85, side: DS }),  // днищевые стрингеры, стойки
-    stringer:  std(0x8798a8, { roughness: 0.4, metalness: 0.8, side: DS }),   // бортовые стрингеры
-    floorPlate:std(0x6a7886, { roughness: 0.45, metalness: 0.75, side: DS }), // флоры
+    frame:     std(0x9fb6cb, { roughness: 0.32, metalness: 0.85, side: DS }), 
+    bulkhead:  std(0x5d6873, { roughness: 0.5, metalness: 0.7, side: DS }),   
+    tanktop:   std(0x7d848c, { roughness: 0.45, metalness: 0.7 }),            
+    girder:    std(0xb5bcc4, { roughness: 0.3, metalness: 0.85, side: DS }),  
+    stringer:  std(0x8798a8, { roughness: 0.4, metalness: 0.8, side: DS }),   
+    floorPlate:std(0x6a7886, { roughness: 0.45, metalness: 0.75, side: DS }), 
     engine:    std(0x56768f, { roughness: 0.4, metalness: 0.75 }),
     engine2:   std(0x3d566b, { roughness: 0.45, metalness: 0.75 }),
   };
@@ -117,35 +97,30 @@ function createMaterials() {
 }
 
 /* ============================================================================
-   3. ГЕОМЕТРИЯ КОРПУСА: параметры сечения и контуры
+   3. ГЕОМЕТРИЯ КОРПУСА
    ============================================================================ */
-
-/** Параметры поперечного сечения корпуса в точке x: полуширина, подъём днища, радиус скулы */
 function sectionParams(x) {
-  const t = (x + S.HALF) / S.L; // 0 — корма, 1 — нос
+  const t = (x + S.HALF) / S.L;
   let B;
-  if (t < 0.14) { const u = t / 0.14; B = S.BEAM * (0.5 + 0.5 * (1 - (1 - u) * (1 - u))); } // транцевая корма
-  else if (t <= 0.7) B = S.BEAM;                                                            // параллельная вставка
-  else { const u = Math.min((t - 0.7) / 0.3, 1); B = S.BEAM * (1 - Math.pow(u, 2.2)); }       // заострение носа
+  if (t < 0.14) { const u = t / 0.14; B = S.BEAM * (0.5 + 0.5 * (1 - (1 - u) * (1 - u))); }
+  else if (t <= 0.7) B = S.BEAM;                                                            
+  else { const u = Math.min((t - 0.7) / 0.3, 1); B = S.BEAM * (1 - Math.pow(u, 2.2)); }       
   B = Math.max(B, 0.12);
-
-  let yb = 0; // подъём днища к оконечностям
+  let yb = 0; 
   if (t < 0.12) { const u = 1 - t / 0.12; yb = 1.2 * u * u; }
   else if (t > 0.78) { const u = Math.min((t - 0.78) / 0.22, 1); yb = 4.2 * u * u; }
-
-  const rb = Math.max(0.05, Math.min(B * 0.45, (S.WL - yb) * 0.8, 4.5)); // радиус скулы
+  const rb = Math.max(0.05, Math.min(B * 0.45, (S.WL - yb) * 0.8, 4.5)); 
   return { t, B, yb, rb };
 }
 
-/** Кольцо точек [z, y] одного сечения корпуса: от борта палубы вниз, по скуле, и вверх (18 точек) */
 function ringPoints(p, yTop) {
   const { B, yb, rb } = p;
   const pts = [[-B, yTop], [-B, S.WL]];
-  for (let k = 0; k <= 6; k++) {                       // левая скула
+  for (let k = 0; k <= 6; k++) {                       
     const th = Math.PI + (Math.PI / 2) * (k / 6);
     pts.push([-B + rb + rb * Math.cos(th), yb + rb + rb * Math.sin(th)]);
   }
-  for (let k = 0; k <= 6; k++) {                       // правая скула
+  for (let k = 0; k <= 6; k++) {                       
     const th = 1.5 * Math.PI + (Math.PI / 2) * (k / 6);
     pts.push([B - rb + rb * Math.cos(th), yb + rb + rb * Math.sin(th)]);
   }
@@ -153,7 +128,6 @@ function ringPoints(p, yTop) {
   return pts;
 }
 
-/** Внутрен контур сечения, смещённый от обшивки на d (замкнутый многоугольник [z, y]) */
 function contour(x, d, yTop, steps = 6) {
   const p = sectionParams(x);
   const B = p.B - d, yb = p.yb + d, rb = Math.max(p.rb - d, 0.05);
@@ -171,7 +145,6 @@ function contour(x, d, yTop, steps = 6) {
   return pts;
 }
 
-/** Полуширина внутреннего контура на высоте y */
 function halfWidthAt(x, y, d = 0) {
   const p = sectionParams(x);
   const B = p.B - d, yb = p.yb + d, rb = Math.max(p.rb - d, 0.05);
@@ -181,7 +154,6 @@ function halfWidthAt(x, y, d = 0) {
   return B - rb + Math.sqrt(Math.max(rb * rb - (rb - dy) * (rb - dy), 0));
 }
 
-/** Отсечение многоугольника горизонтальной плоскостью y = yc (Sutherland–Hodgman) */
 function clipPoly(poly, yc, keepAbove) {
   const inside = (p) => (keepAbove ? p[1] >= yc : p[1] <= yc);
   const out = [];
@@ -196,7 +168,6 @@ function clipPoly(poly, yc, keepAbove) {
   }
   return out;
 }
-/** Удаление подряд идущих одинаковых точек (иначе триангуляция может «споткнуться») */
 const clean = (poly) => poly.filter((p, i) => {
   const q = poly[(i + poly.length - 1) % poly.length];
   return Math.hypot(p[0] - q[0], p[1] - q[1]) > 1e-4;
@@ -204,27 +175,25 @@ const clean = (poly) => poly.filter((p, i) => {
 const polyToShape = (poly) => new THREE.Shape(clean(poly).map((p) => new THREE.Vector2(p[0], p[1])));
 const polyToPath = (poly) => new THREE.Path(clean(poly).map((p) => new THREE.Vector2(p[0], p[1])));
 
-/** Пластина поперечного сечения (переборка / шпангоут), выдавленная вдоль оси X */
 function plateX(poly, holes, thick, x, mat) {
   const sh = polyToShape(poly);
   holes.forEach((h) => sh.holes.push(h));
   const g = new THREE.ExtrudeGeometry(sh, { depth: thick, bevelEnabled: false, curveSegments: 8 });
-  g.rotateY(Math.PI / 2);               // форма (z,y) → плоскость YZ, толщина вдоль +X
+  g.rotateY(Math.PI / 2);               
   g.translate(x - thick / 2, 0, 0);
   return new THREE.Mesh(g, mat);
 }
 
 /* ============================================================================
-   4. СБОРКА КОРПУСА
+   4. СБОРКА СУДНА
    ============================================================================ */
 function buildHull(ship, M, refs) {
-  const N = 72, R = 18;             // N станций по длине, R точек в сечении
+  const N = 72, R = 18;             
   const pos = [];
   for (let i = 0; i <= N; i++) {
     const x = -S.HALF + (S.L * i) / N;
     for (const [z, y] of ringPoints(sectionParams(x), S.DECK)) pos.push(x, y, z);
   }
-  // Индексы: сегменты 0 и R-2 — чёрный борт выше ватерлинии, остальные — красное подводное
   const lower = [], upper = [];
   for (let i = 0; i < N; i++) {
     for (let j = 0; j < R - 1; j++) {
@@ -240,10 +209,9 @@ function buildHull(ship, M, refs) {
   geo.computeVertexNormals();
   const hull = new THREE.Mesh(geo, [M.hullRed, M.hullBlack]);
   hull.name = 'hull';
-  hull.userData.keep = true;        // не объединять (две группы материалов)
+  hull.userData.keep = true;        
   ship.add(hull);
 
-  // «Чертёжные» линии корпуса — проявляются в режиме рентгена, чтобы виден был контур
   const V = (i, j) => { const k = (i * R + j) * 3; return [pos[k], pos[k + 1], pos[k + 2]]; };
   const lp = [];
   for (let i = 0; i <= N; i += 4) for (let j = 0; j < R - 1; j++) lp.push(...V(i, j), ...V(i, j + 1));
@@ -258,13 +226,11 @@ function buildHull(ship, M, refs) {
   ship.add(lines);
   refs.hullLines = lines;
 
-  // Транцевая кормовая стенка
   const tr = new THREE.ShapeGeometry(polyToShape(ringPoints(sectionParams(-S.HALF), S.DECK)));
   tr.rotateY(-Math.PI / 2);
   tr.translate(-S.HALF - 0.01, 0, 0);
   ship.add(new THREE.Mesh(tr, M.hullBlack));
 
-  // Верхняя палуба — плоская оболочка по контуру судна
   const outline = [];
   for (let x = -S.HALF; x <= S.HALF + 1e-6; x += 1.5) outline.push(new THREE.Vector2(x, sectionParams(x).B));
   for (let x = S.HALF; x >= -S.HALF - 1e-6; x -= 1.5) outline.push(new THREE.Vector2(x, -sectionParams(x).B));
@@ -273,7 +239,6 @@ function buildHull(ship, M, refs) {
   deckGeo.translate(0, S.DECK, 0);
   ship.add(new THREE.Mesh(deckGeo, M.deck));
 
-  // Бак (носовая надстройка высотой 3 ед.): чёрные борта + палубный верх
   const fx0 = 44, fo = [];
   for (let x = fx0; x <= S.HALF - 0.01; x += 1) fo.push(new THREE.Vector2(x, sectionParams(x).B));
   fo.push(new THREE.Vector2(S.HALF - 0.01, sectionParams(S.HALF - 0.01).B));
@@ -287,41 +252,29 @@ function buildHull(ship, M, refs) {
   ship.add(fore);
 }
 
-/* ---------- Бульбы, винт, руль ---------- */
 function buildBowStern(ship, M) {
-  // Бульб носа (под водой, выступает вперёд за форштевень)
   add(ship, sph(1, M.hullRed, [58.3, 3.3, 0], [3.7, 2.0, 1.6], 24, 16));
-  // Кормовой бульб (обтекатель гребного вала)
   add(ship, sph(1, M.hullRed, [-59.4, 2.5, 0], [2.4, 1.3, 1.1], 20, 14));
-
-  // Гребной вал и ступица винта
   add(ship, rod([-50, 2.5, 0], [-62.3, 2.5, 0], 0.28, M.steel, 10));
   add(ship, sph(0.5, M.bronze, [-62.5, 2.5, 0], [1.5, 1, 1], 14, 10));
-  // 4 лопасти винта (каждая — эллипсоид на повёрнутом «пивоте»)
   for (let i = 0; i < 4; i++) {
     const pivot = new THREE.Object3D();
     pivot.position.set(-62.5, 2.5, 0);
     pivot.rotation.x = (i * Math.PI) / 2 + 0.35;
     const blade = sph(1, M.bronze, [0, 1.45, 0], [0.14, 1.05, 0.5], 12, 8);
-    blade.rotation.y = 0.55; // шаг лопасти
+    blade.rotation.y = 0.55; 
     pivot.add(blade);
     ship.add(pivot);
   }
-  // Перо руля, баллер и верхняя опора
   add(ship, box(2.4, 5.2, 0.45, M.redPaint, [-64.2, 3.2, 0]));
   add(ship, cyl(0.22, 0.22, 2.6, M.steel, [-64.0, 7.1, 0]));
   add(ship, rod([-64.0, 8.3, 0], [-59.8, 8.3, 0], 0.22, M.steel, 8));
 }
 
-/* ============================================================================
-   5. ВНУТРЕННИЙ НАБОР (виден в режиме «Разрез / Рентген»)
-   ============================================================================ */
 function buildInterior(ship, M) {
-  // --- Двойное дно: продольные днищевые стрингеры (вертикальные килевые балки) ---
   for (const z of [0, -3, 3, -6, 6]) {
     add(ship, box(94, 1.2, 0.2, M.girder, [-7, 1.05, z]));
   }
-  // --- Флоры: поперечные плиты двойного дна с вырезами облегчения ---
   for (let x = -53.5; x <= 39.6; x += 3.5) {
     const outer = clipPoly(contour(x, 0.15, 12), S.DB_H - 0.06, false);
     const holes = [];
@@ -335,7 +288,6 @@ function buildInterior(ship, M) {
     }
     add(ship, plateX(outer, holes, 0.18, x, M.floorPlate));
   }
-  // --- Настил второго дна (танк-топ) и «стулья» переборок ---
   const B = S.BULKHEADS;
   for (let i = 0; i < B.length - 1; i++) {
     const a = B[i] + 1.4, b = B[i + 1] - 1.4;
@@ -345,31 +297,29 @@ function buildInterior(ship, M) {
   for (const xb of B) {
     const w = 2 * halfWidthAt(xb, S.DB_H + 0.8, 0.25) - 0.1;
     add(ship, box(2.6, 1.6, w, M.tanktop, [xb, S.DB_H + 0.8, 0]));
-  }
-  // --- Поперечные переборки с вертикальными стойками жёсткости ---
-  for (const xb of B) {
+    
     const poly = clipPoly(contour(xb, 0.25, 10.78), 2.4, true);
     add(ship, plateX(poly, [], 0.5, xb, M.bulkhead));
-    const hw = halfWidthAt(xb, 2.5, 0.25) - 0.35;
-    const n = Math.floor(hw / 1.6);
+    const hwSt = halfWidthAt(xb, 2.5, 0.25) - 0.35;
+    const n = Math.floor(hwSt / 1.6);
     for (let i = -n; i <= n; i++) {
       add(ship, box(0.28, 8.0, 0.28, M.girder, [xb - 0.39, 6.6, i * 1.6]),
                 box(0.28, 8.0, 0.28, M.girder, [xb + 0.39, 6.6, i * 1.6]));
     }
   }
-  // --- Рамные шпангоуты: кольцо из контура корпуса с вырезом внутри ---
-  const frameXs = [-55, -51.5, -48, -44.5, -41, -37.5, -34];        // машинное отделение
+  
+  const frameXs = [-55, -51.5, -48, -44.5, -41, -37.5, -34];        
   for (let k = 0; k < S.HOLDS; k++) {
-    for (const o of [4, 8, 12]) frameXs.push(holdStart(k) + o);      // трюмы
+    for (const o of [4, 8, 12]) frameXs.push(holdStart(k) + o);      
   }
-  frameXs.push(43.5, 47, 50.5, 54);                                // форпик
+  frameXs.push(43.5, 47, 50.5, 54);                                
   for (const x of frameXs) {
     const outer = contour(x, 0.3, 10.7);
     const inner = contour(x, 0.95, 10.1);
     if (!outer || !inner) continue;
     add(ship, plateX(clipPoly(outer, S.DB_H, true), [polyToPath(clipPoly(inner, 2.4, true))], 0.22, x, M.frame));
   }
-  // --- Бортовые стрингеры (Т-образные балки вдоль борта на трёх уровнях) ---
+  
   for (const side of [-1, 1]) {
     for (const y of [4.2, 7.0, 9.6]) {
       for (let x = -52; x < 39; x += 3.5) {
@@ -383,118 +333,109 @@ function buildInterior(ship, M) {
       }
     }
   }
-  // --- Палубные продольные балки под комингсами люков ---
   for (const z of [-6.2, 6.2]) add(ship, box(91, 0.6, 0.16, M.girder, [-6.5, 10.45, z]));
 
-  // --- Главный двигатель и вспомогательное оборудование машинного отделения ---
+  // ===== СУДОВАЯ МЕХАНИКА =====
+  const FLOOR = S.DB_H + 0.07;      
+  const UPTAKE_X = -47.2;           
+
+  // Главный двигатель
   add(ship, box(12, 0.4, 4.2, M.darkSteel, [-44, 1.9, 0]));
   add(ship, box(11, 3.0, 3.4, M.engine, [-44, 3.6, 0]));
   for (let i = 0; i < 6; i++) add(ship, box(1.4, 3.0, 2.2, M.engine2, [-48.5 + i * 1.8, 6.7, 0]));
-  for (const z of [-3.6, 3.6]) add(ship, box(3, 1.6, 1.6, M.engine, [-36, 2.7, z]));
 
-  // ===== Судовая механика: кормовая часть МО (x = −55 … −35) =====
-  const FLOOR = S.DB_H + 0.07;      // верх настила второго дна (танк-топ) — «пол» МО
-  const UPTAKE_X = -47.2;           // ось дымовой трубы (как в buildSuperstructure)
-
-  // --- Судовая электростанция: 4 дизель-генератора, по два на каждом борту от ГД ---
+  // СЭС (Дизель-генераторы)
   const dieselGen = (cx, z) => {
-    const top = FLOOR + 0.3;                                                              // верх общей рамы
+    const top = FLOOR + 0.3;                                                              
     add(ship,
-      box(4.4, 0.3, 1.9, M.darkSteel, [cx + 0.05, FLOOR + 0.15, z]),                      // общая рама
-      box(2.6, 1.5, 1.4, M.engine, [cx - 0.7, top + 0.75, z]),                            // блок дизеля
-      cyl(0.62, 0.62, 1.5, M.yellow, [cx + 1.35, top + 0.62, z], [0, 0, Math.PI / 2], 16),// альтернатор
-      rod([cx - 0.7, top + 1.5, z], [cx - 0.7, 9.6, z], 0.17, M.darkSteel, 8),            // выхлоп вверх…
-      rod([cx - 0.7, 9.6, z], [UPTAKE_X, 10.0, 0], 0.17, M.darkSteel, 8)                  // …в общую трубу
+      box(4.4, 0.3, 1.9, M.darkSteel, [cx + 0.05, FLOOR + 0.15, z]),                      
+      box(2.6, 1.5, 1.4, M.engine, [cx - 0.7, top + 0.75, z]),                            
+      cyl(0.62, 0.62, 1.5, M.yellow, [cx + 1.35, top + 0.62, z], [0, 0, Math.PI / 2], 16),
+      rod([cx - 0.7, top + 1.5, z], [cx - 0.7, 9.6, z], 0.17, M.darkSteel, 8),            
+      rod([cx - 0.7, 9.6, z], [UPTAKE_X, 10.0, 0], 0.17, M.darkSteel, 8)                  
     );
-    for (let i = 0; i < 4; i++) {                                                         // крышки цилиндров
+    for (let i = 0; i < 4; i++) {                                                         
       add(ship, box(0.45, 0.5, 1.0, M.engine2, [cx - 1.55 + i * 0.6, top + 1.75, z]));
     }
   };
   for (const z of [-5.4, 5.4]) for (const cx of [-47, -41]) dieselGen(cx, z);
 
-  // --- ЦПУ (Центральный пост управления) и ГРЩ ---
-  // Звукоизолированная рубка механиков со стеклом, смотрящим на главный двигатель
-  add(ship, box(4.0, 3.2, 7.5, M.white, [-32.5, FLOOR + 1.6, 0])); // корпус ЦПУ
-  add(ship, box(0.1, 1.2, 5.0, M.glass, [-34.5, FLOOR + 1.7, 0])); // обзорное окно
-  add(ship, box(0.9, 2.6, 5.0, M.darkSteel, [-31.5, FLOOR + 1.3, 0])); // ГРЩ внутри ЦПУ
+  // ЦПУ (Центральный пост управления) и ГРЩ
+  add(ship, box(4.0, 3.2, 7.5, M.white, [-32.5, FLOOR + 1.6, 0])); 
+  add(ship, box(0.1, 1.2, 5.0, M.glass, [-34.5, FLOOR + 1.7, 0])); 
+  add(ship, box(0.9, 2.6, 5.0, M.darkSteel, [-31.5, FLOOR + 1.3, 0])); 
   for (let i = -2; i <= 2; i++) add(ship, box(0.05, 0.16, 0.16, i % 2 ? M.lampGreen : M.lampRed, [-31.95, FLOOR + 2.1, i * 0.85]));
 
-  // --- Баллоны пускового воздуха (Air Receivers) ---
-  // Огромные желтые резервуары со сжатым воздухом для запуска главного двигателя
+  // Баллоны пускового воздуха
   for (const z of [4.5, 6.2]) {
     add(ship, cyl(0.65, 0.65, 3.8, M.yellow, [-33.5, FLOOR + 1.9, z], [0, 0, 0], 16));
-    add(ship, sph(0.65, M.yellow, [-33.5, FLOOR + 3.8, z], [1, 0.5, 1], 16, 8)); // сферическая крышка
+    add(ship, sph(0.65, M.yellow, [-33.5, FLOOR + 3.8, z], [1, 0.5, 1], 16, 8)); 
   }
-  // --- Вспомогательный котёл: вертикальный цилиндр с куполом, горелкой и водомерной колонкой ---
+
+  // Вспомогательный котёл
   const bx = -54, bz = -4.6;
   add(ship,
-    cyl(1.25, 1.25, 3.6, M.funnelRed, [bx, FLOOR + 1.8, bz], [0, 0, 0], 20),    // корпус
-    sph(1.25, M.funnelRed, [bx, FLOOR + 3.6, bz], [1, 0.45, 1], 20, 10),        // верхнее днище
-    cyl(1.35, 1.35, 0.2, M.darkSteel, [bx, FLOOR + 0.1, bz], [0, 0, 0], 20),    // опорное кольцо
-    box(0.9, 0.9, 0.9, M.darkSteel, [bx + 1.7, FLOOR + 1.2, bz]),               // горелка
+    cyl(1.25, 1.25, 3.6, M.funnelRed, [bx, FLOOR + 1.8, bz], [0, 0, 0], 20),    
+    sph(1.25, M.funnelRed, [bx, FLOOR + 3.6, bz], [1, 0.45, 1], 20, 10),        
+    cyl(1.35, 1.35, 0.2, M.darkSteel, [bx, FLOOR + 0.1, bz], [0, 0, 0], 20),    
+    box(0.9, 0.9, 0.9, M.darkSteel, [bx + 1.7, FLOOR + 1.2, bz]),               
     cyl(0.28, 0.28, 0.8, M.steel, [bx + 2.4, FLOOR + 1.2, bz], [0, 0, Math.PI / 2], 10),
-    rod([bx + 1.3, FLOOR + 0.5, bz + 0.9], [bx + 1.3, FLOOR + 3.0, bz + 0.9], 0.07, M.steel, 6), // водомерная колонка
-    rod([bx, FLOOR + 4.1, bz], [bx, 9.2, bz], 0.2, M.darkSteel, 8),             // дымоход вверх…
-    rod([bx, 9.2, bz], [UPTAKE_X, 10.0, 0], 0.2, M.darkSteel, 8)               // …в общую трубу
+    rod([bx + 1.3, FLOOR + 0.5, bz + 0.9], [bx + 1.3, FLOOR + 3.0, bz + 0.9], 0.07, M.steel, 6), 
+    rod([bx, FLOOR + 4.1, bz], [bx, 9.2, bz], 0.2, M.darkSteel, 8),             
+    rod([bx, 9.2, bz], [UPTAKE_X, 10.0, 0], 0.2, M.darkSteel, 8)               
   );
 
-  // --- Два сепаратора топлива: фундамент, барабан, конусная крышка, электромотор ---
+  // Сепараторы топлива
   for (const sx of [-54.2, -52.0]) {
     add(ship,
       box(1.1, 0.5, 1.1, M.darkSteel, [sx, FLOOR + 0.25, 4.6]),
       cyl(0.5, 0.55, 1.5, M.steel, [sx, FLOOR + 1.25, 4.6], [0, 0, 0], 16),
       cyl(0.3, 0.5, 0.5, M.engine, [sx, FLOOR + 2.25, 4.6], [0, 0, 0], 16),
       cyl(0.14, 0.14, 0.3, M.darkSteel, [sx, FLOOR + 2.65, 4.6]),
-      box(0.7, 0.6, 0.7, M.engine2, [sx, FLOOR + 0.8, 5.55])                    // привод
+      box(0.7, 0.6, 0.7, M.engine2, [sx, FLOOR + 0.8, 5.55])                    
     );
   }
 
-  // --- Главный газоотвод: коллектор → турбонаддув → глушитель → труба ---
+  // Главный газоотвод
   add(ship,
-    rod([-39.5, 8.45, 0], [UPTAKE_X, 8.45, 0], 0.3, M.darkSteel, 10),           // выпускной коллектор над цилиндрами
-    cyl(0.55, 0.55, 1.6, M.darkSteel, [-41.0, 9.1, 0], [0, 0, Math.PI / 2], 14),// турбонагнетатель
-    sph(0.5, M.darkSteel, [UPTAKE_X, 8.45, 0], [1, 1, 1], 12, 8),               // колено
-    rod([UPTAKE_X, 8.45, 0], [UPTAKE_X, 21.6, 0], 0.5, M.darkSteel, 12),        // газоотвод до основания трубы
-    cyl(0.95, 0.95, 1.6, M.steel, [UPTAKE_X, 10.0, 0], [0, 0, 0], 18)           // глушитель выхлопа
+    rod([-39.5, 8.45, 0], [UPTAKE_X, 8.45, 0], 0.3, M.darkSteel, 10),           
+    cyl(0.55, 0.55, 1.6, M.darkSteel, [-41.0, 9.1, 0], [0, 0, Math.PI / 2], 14),
+    sph(0.5, M.darkSteel, [UPTAKE_X, 8.45, 0], [1, 1, 1], 12, 8),               
+    rod([UPTAKE_X, 8.45, 0], [UPTAKE_X, 21.6, 0], 0.5, M.darkSteel, 12),        
+    cyl(0.95, 0.95, 1.6, M.steel, [UPTAKE_X, 10.0, 0], [0, 0, 0], 18)           
   );
 
-  // --- Рулевая гидравлическая машина над пером руля (x ≈ −64, y ≈ 8.7) ---
+  // Рулевая машина
   const sgx = -64.0, sgy = 8.7;
   add(ship,
-    box(3.8, 0.22, 7.6, M.darkSteel, [sgx - 0.6, sgy - 0.55, 0]),               // фундамент
-    cyl(0.45, 0.45, 0.5, M.steel, [sgx, sgy - 0.05, 0], [0, 0, 0], 14),         // ступица на баллере
-    box(0.6, 0.4, 3.2, M.bronze, [sgx, sgy, 0]),                                // румпель
-    box(1.3, 0.9, 1.9, M.engine2, [sgx - 1.6, sgy, 0])                          // гидронасос + бак
+    box(3.8, 0.22, 7.6, M.darkSteel, [sgx - 0.6, sgy - 0.55, 0]),               
+    cyl(0.45, 0.45, 0.5, M.steel, [sgx, sgy - 0.05, 0], [0, 0, 0], 14),         
+    box(0.6, 0.4, 3.2, M.bronze, [sgx, sgy, 0]),                                
+    box(1.3, 0.9, 1.9, M.engine2, [sgx - 1.6, sgy, 0])                          
   );
   for (const s of [-1, 1]) {
     add(ship,
-      cyl(0.42, 0.42, 1.8, M.engine, [sgx, sgy, s * 2.75], [Math.PI / 2, 0, 0], 16),   // гидроцилиндр
-      cyl(0.5, 0.5, 0.15, M.darkSteel, [sgx, sgy, s * 3.7], [Math.PI / 2, 0, 0], 16),  // крышка цилиндра
-      rod([sgx, sgy, s * 1.85], [sgx, sgy, s * 1.55], 0.13, M.steel, 8),               // шток плунжера
-      sph(0.28, M.bronze, [sgx, sgy, s * 1.6], [1, 1, 1], 10, 8),                      // шарнир румпеля
-      rod([sgx - 1.3, 9.0, s * 0.6], [sgx - 0.45, 9.05, s * 2.7], 0.08, M.steel, 6)    // маслопровод
+      cyl(0.42, 0.42, 1.8, M.engine, [sgx, sgy, s * 2.75], [Math.PI / 2, 0, 0], 16),   
+      cyl(0.5, 0.5, 0.15, M.darkSteel, [sgx, sgy, s * 3.7], [Math.PI / 2, 0, 0], 16),  
+      rod([sgx, sgy, s * 1.85], [sgx, sgy, s * 1.55], 0.13, M.steel, 8),               
+      sph(0.28, M.bronze, [sgx, sgy, s * 1.6], [1, 1, 1], 10, 8),                      
+      rod([sgx - 1.3, 9.0, s * 0.6], [sgx - 0.45, 9.05, s * 2.7], 0.08, M.steel, 6)    
     );
   }
 }
 
-/* ============================================================================
-   6. ПАЛУБА: люки, краны, леера, швартовное и якорное устройства
-   ============================================================================ */
-
-/** Грузовой кран: пьедестал, машинное помещение, кабина, стрела, оттяжки, гак */
 function buildCrane(ship, M, x, yaw) {
   const g = new THREE.Group();
   g.position.set(x, S.DECK, 0);
   g.rotation.y = yaw;
   add(g,
-    cyl(1.1, 1.3, 2.2, M.darkSteel, [0, 1.1, 0], [0, 0, 0], 16),         // пьедестал
-    cyl(1.4, 1.4, 0.25, M.steel, [0, 2.3, 0], [0, 0, 0], 16),            // опорно-поворотный круг
-    box(3.0, 1.6, 2.6, M.yellow, [0, 3.25, 0]),                          // машинное помещение
-    box(1.3, 1.4, 1.2, M.yellow, [0.8, 3.5, 1.9]),                       // кабина оператора
-    box(1.0, 0.7, 0.06, M.glass, [0.8, 3.7, 2.52]),                      // окно кабины
-    box(0.5, 0.7, 0.7, M.darkSteel, [0.6, 4.0, 0])                       // шарнир стрелы
+    cyl(1.1, 1.3, 2.2, M.darkSteel, [0, 1.1, 0], [0, 0, 0], 16),         
+    cyl(1.4, 1.4, 0.25, M.steel, [0, 2.3, 0], [0, 0, 0], 16),            
+    box(3.0, 1.6, 2.6, M.yellow, [0, 3.25, 0]),                          
+    box(1.3, 1.4, 1.2, M.yellow, [0.8, 3.5, 1.9]),                       
+    box(1.0, 0.7, 0.06, M.glass, [0.8, 3.7, 2.52]),                      
+    box(0.5, 0.7, 0.7, M.darkSteel, [0.6, 4.0, 0])                       
   );
-  // Стрела (шарнир на её конце, наклон вверх)
   const ang = 0.5, len = 14;
   const boomGeo = new THREE.BoxGeometry(len, 0.5, 0.7);
   boomGeo.translate(len / 2, 0, 0);
@@ -503,20 +444,17 @@ function buildCrane(ship, M, x, yaw) {
   boom.rotation.z = ang;
   g.add(boom);
   const tip = [0.6 + len * Math.cos(ang), 4.0 + len * Math.sin(ang), 0];
-  // Мачта-аншпуг, штаг и оттяжка к концу стрелы
   const mastTop = [-1.6, 8.2, 0];
   add(g,
     rod([-0.9, 4.0, 0], mastTop, 0.18, M.darkSteel, 6),
     rod(mastTop, [-2.0, 4.2, 0], 0.08, M.steel, 4),
     rod(mastTop, tip, 0.08, M.steel, 4),
-    rod(tip, [tip[0], tip[1] - 7, 0], 0.05, M.black, 4),                 // грузовой трос
-    box(0.5, 0.6, 0.4, M.darkSteel, [tip[0], tip[1] - 7.3, 0])           // гак
+    rod(tip, [tip[0], tip[1] - 7, 0], 0.05, M.black, 4),                 
+    box(0.5, 0.6, 0.4, M.darkSteel, [tip[0], tip[1] - 7.3, 0])           
   );
   ship.add(g);
-   
 }
 
-/** Цепь из звеньев-торов вдоль кривой Катмулла–Рома (якорная цепь) */
 function buildChain(ship, M, pts, n) {
   const curve = new THREE.CatmullRomCurve3(pts.map((p) => new THREE.Vector3(p[0], p[1], p[2])));
   const X = new THREE.Vector3(1, 0, 0);
@@ -527,15 +465,13 @@ function buildChain(ship, M, pts, n) {
     const m = new THREE.Mesh(geo, M.darkSteel);
     m.position.copy(curve.getPointAt(u));
     m.quaternion.setFromUnitVectors(X, curve.getTangentAt(u));
-    m.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(X, (i % 2) * Math.PI / 2)); // звенья чередуются
+    m.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(X, (i % 2) * Math.PI / 2)); 
     ship.add(m);
   }
 }
 
 function buildDeck(ship, M) {
   const D = S.DECK;
-
-  // --- Люковые закрытия: комингс + две складывающиеся секции с рёбрами ---
   for (let k = 0; k < S.HOLDS; k++) {
     const cx = holdStart(k) + 8;
     add(ship,
@@ -549,13 +485,10 @@ function buildDeck(ship, M) {
       for (let r = -2; r <= 2; r++) add(ship, box(0.14, 0.1, 12.2, M.coaming, [cx + s * 3.6 + r * 1.35, D + 1.14, 0]));
     }
   }
-
-  // --- Краны между трюмами (на оси судна) ---
   buildCrane(ship, M, S.BULKHEADS[2], -0.3);
   buildCrane(ship, M, S.BULKHEADS[3], 1.1);
   buildCrane(ship, M, S.BULKHEADS[4], 0.25);
 
-  // --- Леера: поручни по периметру главной палубы (вокруг кормы) и бака ---
   const loop = [];
   for (let x = 43.5; x >= -59.4; x -= 2) loop.push([x, sectionParams(x).B - 0.28]);
   const bT = sectionParams(-S.HALF).B - 0.28;
@@ -577,44 +510,38 @@ function buildDeck(ship, M) {
   const fl2 = fl.slice().reverse().map((p) => [p[0], -p[1]]);
   railPath(fl.concat(fl2), D + 3);
 
-  // --- Швартовные тумбы (кнехты) ---
   const bollards = [[-56.5, 5.4], [-56.5, -5.4], [-30, 9.1], [-30, -9.1], [20, 9.1], [20, -9.1], [55.3, 1.3], [55.3, -1.3], [50, 3.0], [50, -3.0]];
   for (const [x, z] of bollards) {
     const y = x > 44 ? D + 3 : D;
     add(ship, cyl(0.28, 0.38, 0.75, M.darkSteel, [x, y + 0.375, z]),
               cyl(0.5, 0.5, 0.18, M.darkSteel, [x, y + 0.84, z]));
   }
-  // Кормовые швартовные лебёдки
   for (const z of [-3.6, 3.6]) {
     add(ship, box(2.6, 1.0, 1.8, M.darkSteel, [-56.2, D + 0.5, z]),
               cyl(0.55, 0.55, 1.4, M.steel, [-56.2, D + 1.3, z], [0, 0, Math.PI / 2]));
   }
-  // Вентиляционные грибки
   for (const [x, z] of [[-27, 8.7], [-27, -8.7], [-8, 8.7], [-8, -8.7], [14, 8.7], [14, -8.7], [34, 7.7], [34, -7.7]]) {
     add(ship, cyl(0.28, 0.28, 1.6, M.funnelRed, [x, D + 0.8, z]),
               cyl(0.85, 0.28, 0.45, M.funnelRed, [x, D + 1.85, z]));
   }
 
-  // --- Якорное устройство на баке ---
-  add(ship, box(3.2, 0.9, 2.6, M.darkSteel, [53, D + 3.45, 0]));                           // основание брашпиля
-  add(ship, cyl(0.25, 0.25, 3.4, M.steel, [53, D + 4.3, 0], [Math.PI / 2, 0, 0], 10));     // вал
-  for (const z of [-1.5, 1.5]) add(ship, cyl(0.8, 0.8, 0.6, M.steel, [53, D + 4.3, z], [Math.PI / 2, 0, 0], 14)); // звёздочки
-  add(ship, box(1.2, 0.9, 1.2, M.engine2, [53, D + 4.1, 0]));                              // привод
-  // Деревянный-стальной «домик» (кладовая боцмана) на баке
+  add(ship, box(3.2, 0.9, 2.6, M.darkSteel, [53, D + 3.45, 0]));                           
+  add(ship, cyl(0.25, 0.25, 3.4, M.steel, [53, D + 4.3, 0], [Math.PI / 2, 0, 0], 10));     
+  for (const z of [-1.5, 1.5]) add(ship, cyl(0.8, 0.8, 0.6, M.steel, [53, D + 4.3, z], [Math.PI / 2, 0, 0], 14)); 
+  add(ship, box(1.2, 0.9, 1.2, M.engine2, [53, D + 4.1, 0]));                              
   add(ship, box(3.6, 2.6, 4.2, M.white, [46.2, D + 4.3, 0]),
             box(0.08, 1.5, 0.9, M.darkSteel, [44.35, D + 3.75, 0]),
             box(0.08, 0.6, 0.9, M.glass, [48.03, D + 4.6, 1.0]),
             box(0.08, 0.6, 0.9, M.glass, [48.03, D + 4.6, -1.0]),
             box(3.8, 0.18, 4.4, M.trim, [46.2, D + 5.7, 0]));
-  // Клюзы, якоря и цепи по обоим бортам
   const hx = 52, hB = sectionParams(hx).B;
   for (const s of [-1, 1]) {
-    add(ship, cyl(0.32, 0.32, 0.12, M.black, [hx, 12.4, s * hB], [Math.PI / 2, 0, 0], 14));        // клюз
+    add(ship, cyl(0.32, 0.32, 0.12, M.black, [hx, 12.4, s * hB], [Math.PI / 2, 0, 0], 14));        
     const az = s * (hB + 0.55);
     add(ship,
-      box(0.26, 2.5, 0.26, M.darkSteel, [hx, 10.3, az]),                                           // веретено
-      box(0.2, 0.2, 1.6, M.darkSteel, [hx, 11.4, az]),                                             // шток
-      box(1.0, 0.22, 0.6, M.darkSteel, [hx - 0.55, 9.3, az], [0, 0, 0.5]),                         // лапы
+      box(0.26, 2.5, 0.26, M.darkSteel, [hx, 10.3, az]),                                           
+      box(0.2, 0.2, 1.6, M.darkSteel, [hx, 11.4, az]),                                             
+      box(1.0, 0.22, 0.6, M.darkSteel, [hx - 0.55, 9.3, az], [0, 0, 0.5]),                         
       box(1.0, 0.22, 0.6, M.darkSteel, [hx + 0.55, 9.3, az], [0, 0, -0.5])
     );
     buildChain(ship, M, [
@@ -624,53 +551,45 @@ function buildDeck(ship, M) {
   }
 }
 
-/* ============================================================================
-   7. НАДСТРОЙКА (4 яруса), мостик, мачта, радары, труба, шлюпки
-   ============================================================================ */
 function buildSuperstructure(ship, M, refs) {
   const tier = (cx, w, d, y0, h) => {
     add(ship, box(w, h, d, M.white, [cx, y0 + h / 2, 0]),
-              box(w + 0.5, 0.22, d + 0.5, M.trim, [cx, y0 + h, 0]));  // «козырёк» яруса
+              box(w + 0.5, 0.22, d + 0.5, M.trim, [cx, y0 + h, 0]));  
   };
-  tier(-43, 18, 16, 11, 3.5);    // ярус 1 (главная палуба, служебные помещения)
-  tier(-43, 14, 14.4, 14.5, 3.5);// ярус 2 (каюты)
-  tier(-43, 12, 12.8, 18, 3.5);  // ярус 3 (каюты командного состава)
-  // Ходовой мостик (рубка) с крылом
+  tier(-43, 18, 16, 11, 3.5);    
+  tier(-43, 14, 14.4, 14.5, 3.5);
+  tier(-43, 12, 12.8, 18, 3.5);  
   add(ship, box(7, 3.0, 10.4, M.white, [-41, 23, 0]),
             box(8, 0.3, 11.6, M.trim, [-41, 24.65, 0]));
   for (const s of [-1, 1]) {
-    add(ship, box(3, 0.3, 4.2, M.white, [-41, 21.85, s * 7.3]),     // крыло мостика
+    add(ship, box(3, 0.3, 4.2, M.white, [-41, 21.85, s * 7.3]),     
               box(3, 0.9, 0.12, M.white, [-41, 22.45, s * 9.4]),
               box(0.12, 0.9, 4.2, M.white, [-42.4, 22.45, s * 7.3]));
-    add(ship, sph(0.22, s > 0 ? M.lampGreen : M.lampRed, [-40.4, 22.2, s * 9.2], [1, 1, 1], 8, 6)); // бортовые огни
+    add(ship, sph(0.22, s > 0 ? M.lampGreen : M.lampRed, [-40.4, 22.2, s * 9.2], [1, 1, 1], 8, 6)); 
   }
-  // Окна: ряды тёмных стёкол на каждой стороне ярусов
   const win = (x, y, z, w, h, d) => add(ship, box(w, h, d, M.glass, [x, y, z]));
   const row = (n, from, step, fn) => { for (let i = 0; i < n; i++) fn(from + i * step); };
-  row(9, -6.4, 1.6, (z) => win(-33.97, 12.9, z, 0.1, 0.9, 1.0));                         // ярус 1, нос
-  for (const s of [-1, 1]) row(8, -50, 2, (x) => win(x, 12.9, s * 8.03, 1.1, 0.9, 0.1)); // ярус 1, борта
-  row(8, -5.6, 1.6, (z) => win(-35.97, 16.4, z, 0.1, 0.9, 1.0));                         // ярус 2
+  row(9, -6.4, 1.6, (z) => win(-33.97, 12.9, z, 0.1, 0.9, 1.0));                         
+  for (const s of [-1, 1]) row(8, -50, 2, (x) => win(x, 12.9, s * 8.03, 1.1, 0.9, 0.1)); 
+  row(8, -5.6, 1.6, (z) => win(-35.97, 16.4, z, 0.1, 0.9, 1.0));                         
   for (const s of [-1, 1]) row(6, -48, 2, (x) => win(x, 16.4, s * 7.23, 1.1, 0.9, 0.1));
-  row(7, -4.8, 1.6, (z) => win(-36.97, 19.9, z, 0.1, 0.9, 1.0));                         // ярус 3
+  row(7, -4.8, 1.6, (z) => win(-36.97, 19.9, z, 0.1, 0.9, 1.0));                         
   for (const s of [-1, 1]) row(5, -47, 2, (x) => win(x, 19.9, s * 6.43, 1.1, 0.9, 0.1));
-  row(7, -4.5, 1.5, (z) => win(-37.45, 23.2, z, 0.1, 1.1, 1.3));                         // мостик, нос
+  row(7, -4.5, 1.5, (z) => win(-37.45, 23.2, z, 0.1, 1.1, 1.3));                         
   for (const s of [-1, 1]) row(5, -43.8, 1.4, (x) => win(x, 23.2, s * 5.25, 1.1, 1.0, 0.1));
 
-  // Дымовая труба
   add(ship, cyl(1.5, 1.8, 7.5, M.black, [-47.2, 25.25, 0], [0, 0, 0], 22),
             cyl(1.66, 1.7, 1.5, M.funnelRed, [-47.2, 26.1, 0], [0, 0, 0], 22),
             cyl(1.4, 1.5, 0.2, M.darkSteel, [-47.2, 29.1, 0], [0, 0, 0], 22));
-  // Мачта с реем, топовым огнём и антеннами
   add(ship, rod([-42.5, 24.8, 0], [-42.5, 31.2, 0], 0.15, M.steel, 8),
             box(0.15, 0.15, 5.0, M.steel, [-42.5, 29.2, 0]),
             sph(0.22, M.lampWhite, [-42.5, 31.4, 0], [1, 1, 1], 8, 6),
             sph(0.18, M.lampWhite, [-42.5, 29.2, 2.4], [1, 1, 1], 8, 6),
-            rod([-44, 24.8, 4.8], [-44, 28.8, 4.8], 0.05, M.steel, 4),                 // УКВ-антенны
+            rod([-44, 24.8, 4.8], [-44, 28.8, 4.8], 0.05, M.steel, 4),                 
             rod([-38.8, 24.8, -4.8], [-38.8, 28.5, -4.8], 0.05, M.steel, 4),
-            sph(0.4, M.white, [-43.8, 25.2, 3.4], [1, 1, 1], 12, 8),                   // GPS-купола
+            sph(0.4, M.white, [-43.8, 25.2, 3.4], [1, 1, 1], 12, 8),                   
             sph(0.4, M.white, [-43.8, 25.2, -3.4], [1, 1, 1], 12, 8),
-            sph(1.0, M.white, [-45.3, 25.8, -3.2], [1, 1, 1], 14, 10));                // спутниковый купол
-  // Радары: пьедестал статичен (объединится), антенна-сканер вращается в animate()
+            sph(1.0, M.white, [-45.3, 25.8, -3.2], [1, 1, 1], 14, 10));                
   for (const [z, w] of [[2.4, 2.6], [-2.4, 3.6]]) {
     add(ship, cyl(0.25, 0.3, 0.9, M.darkSteel, [-40.2, 25.25, z]));
     const pivot = new THREE.Group();
@@ -681,11 +600,9 @@ function buildSuperstructure(ship, M, refs) {
     ship.add(pivot);
     refs.radars.push(pivot);
   }
-  // Спасательные плоты на крыше второго яруса
   for (const s of [-1, 1]) for (const x of [-45.5, -43.5, -41.5]) {
     add(ship, cyl(0.38, 0.38, 1.3, M.orange, [x, 18.4, s * 6.8], [0, 0, Math.PI / 2], 10));
   }
-  // Свободнопадающая спасательная шлюпка на корме с направляющими
   add(ship, rod([-52.2, 14.4, 0.7], [-58.5, 11.4, 0.7], 0.12, M.steel, 5),
             rod([-52.2, 14.4, -0.7], [-58.5, 11.4, -0.7], 0.12, M.steel, 5));
   const boat = sph(1, M.orange, [-55, 13.75, 0], [2.7, 0.9, 0.9], 16, 10);
@@ -693,9 +610,6 @@ function buildSuperstructure(ship, M, refs) {
   add(ship, boat);
 }
 
-/* ============================================================================
-   8. ИМЕНА НА БОРТУ (canvas-текстура) и ОБЪЕДИНЕНИЕ СТАТИЧНОЙ ГЕОМЕТРИИ
-   ============================================================================ */
 function makeNameTexture(text) {
   const c = document.createElement('canvas');
   c.width = 512; c.height = 128;
@@ -711,13 +625,14 @@ function makeNameTexture(text) {
   t.anisotropy = 4;
   return t;
 }
+
 function buildNames(ship, shellMats) {
   const mat = new THREE.MeshBasicMaterial({
     map: makeNameTexture('DASHULYA'), transparent: true, depthWrite: false,
     polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
   });
   mat.userData.shell = true;
-  mat.userData.alwaysTransparent = true;   // текст всегда с альфой
+  mat.userData.alwaysTransparent = true;   
   shellMats.push(mat);
   const geo = new THREE.PlaneGeometry(11, 2.75);
   const sideR = new THREE.Mesh(geo, mat); sideR.position.set(16, 9.2, 10.03);
@@ -726,10 +641,6 @@ function buildNames(ship, shellMats) {
   [sideR, sideL, stern].forEach((m) => { m.userData.keep = true; ship.add(m); });
 }
 
-/**
- * Объединяет все статические меши по материалам: сотни мелких мешей → ~40 draw call.
- * Не трогает меши с userData.keep (корпус, бак, вращающиеся радары, таблички).
- */
 function mergeStatic(root) {
   root.updateMatrixWorld(true);
   const buckets = new Map();
@@ -752,7 +663,6 @@ function mergeStatic(root) {
   }
 }
 
-/** Главная функция: собирает судно целиком */
 function buildShip() {
   const { M, shellMats } = createMaterials();
   const ship = new THREE.Group();
@@ -768,13 +678,9 @@ function buildShip() {
   return { ship, refs, M, shellMats };
 }
 
-// <<BUILD-END>>
-
 /* ============================================================================
-   9. ДАННЫЕ МЕТОК + SVG-СХЕМЫ (процедурные «картинки» для карточки)
+   9. ДАННЫЕ МЕТОК + SVG-СХЕМЫ
    ============================================================================ */
-
-/** Подпись с выноской: lines — строки текста, (x,y) — позиция текста, (px,py) — точка на детали */
 const L = (lines, x, y, anchor, px, py) => {
   const arr = [].concat(lines);
   const ts = arr.map((s, i) => `<tspan x="${x}" dy="${i ? 10.5 : 0}">${s}</tspan>`).join('');
@@ -898,25 +804,54 @@ const diagPropeller = () => svg('Гребной винт и руль', `
   ${L(['Баллер'], 298, 38, 'middle', 267, 46)}
   ${L(['Кормовой бульб'], 112, 24, 'middle', 174, 92)}`);
 
-// --- ЦПУ (Центральный пост управления) и ГРЩ ---
-  // Звукоизолированная рубка механиков со стеклом, смотрящим на главный двигатель
-  add(ship, box(4.0, 3.2, 7.5, M.white, [-32.5, FLOOR + 1.6, 0])); // корпус ЦПУ
-  add(ship, box(0.1, 1.2, 5.0, M.glass, [-34.5, FLOOR + 1.7, 0])); // обзорное окно
-  add(ship, box(0.9, 2.6, 5.0, M.darkSteel, [-31.5, FLOOR + 1.3, 0])); // ГРЩ внутри ЦПУ
-  for (let i = -2; i <= 2; i++) add(ship, box(0.05, 0.16, 0.16, i % 2 ? M.lampGreen : M.lampRed, [-31.95, FLOOR + 2.1, i * 0.85]));
+const diagMechanics = () => svg('Судовая механика: машинное отделение, вид сверху', `
+  <path class="hullf" d="M304 40H170L158 40.3L141 41.6L124 44.1L107 47.7L90 52.4L73 58.4L56 65V115L73 121.6L90 127.6L107 132.3L124 135.9L141 138.4L158 139.7L170 140H304"/>
+  <path class="thin dash" d="M20 90H304"/>
+  <path class="thin" d="M73 58V122M255 40V140"/>
+  <text class="lbl" x="160" y="11" text-anchor="middle">Машинное отделение · вид сверху</text>
+  <text class="lbl" x="300" y="94" text-anchor="end">нос →</text>
 
-  // --- Баллоны пускового воздуха (Air Receivers) ---
-  // Огромные желтые резервуары со сжатым воздухом для запуска главного двигателя
-  for (const z of [4.5, 6.2]) {
-    add(ship, cyl(0.65, 0.65, 3.8, M.yellow, [-33.5, FLOOR + 1.9, z], [0, 0, 0], 16));
-    add(ship, sph(0.65, M.yellow, [-33.5, FLOOR + 3.8, z], [1, 0.5, 1], 16, 8)); // сферическая крышка
-  }
+  <rect class="steel" x="15" y="70" width="22" height="40"/>
+  <rect class="dark" x="6" y="85" width="9" height="10"/>
+  <path class="thin" d="M15 87L21 77M15 93L21 103"/>
+  <rect class="accf" x="21" y="72" width="10" height="9"/><rect class="accf" x="21" y="99" width="10" height="9"/>
+  <rect class="bronze" x="24" y="80" width="4" height="20"/>
 
-/**
- * Метки (маркеры) на модели.
- * pos — координаты (x, y, z) на судне; cam — смещение камеры относительно метки при «подлёте»;
- * xray — включать ли автоматически режим рентгена для внутренних деталей.
- */
+  <path class="acc" d="M124 90H42"/>
+  <ellipse class="bronze" cx="39" cy="90" rx="3.5" ry="14"/>
+
+  <circle class="orange" cx="97" cy="67" r="8"/><circle class="dark" cx="97" cy="67" r="3"/>
+  <rect class="dark" x="106" y="64" width="6" height="6"/>
+  <path class="warm dash" d="M97 67L143 90"/>
+
+  <circle class="steel" cx="95" cy="113" r="5"/><circle class="steel" cx="109" cy="113" r="5"/>
+  <circle class="dark" cx="95" cy="113" r="2"/><circle class="dark" cx="109" cy="113" r="2"/>
+
+  ${[63, 117].map((cy) => `
+  <rect class="steel" x="131" y="${cy - 5.5}" width="18" height="11"/><rect class="yellow" x="149" y="${cy - 5.5}" width="10" height="11"/>
+  <rect class="steel" x="172" y="${cy - 5.5}" width="18" height="11"/><rect class="yellow" x="190" y="${cy - 5.5}" width="10" height="11"/>`).join('')}
+
+  <rect class="steel" x="127" y="80" width="75" height="20"/>
+  ${[0, 1, 2, 3, 4, 5].map((i) => `<rect class="accf" x="${(129.4 + i * 12.24).toFixed(1)}" y="84" width="9.5" height="12"/>`).join('')}
+  <rect class="dark" x="203" y="85" width="11" height="10"/>
+  <path class="warm" d="M205 90H143"/>
+  <circle class="orange" cx="143" cy="90" r="4"/>
+
+  <rect class="white" x="228" y="70" width="27" height="40"/>
+  <rect class="glassf" x="226" y="76" width="3" height="28"/>
+  <text class="lbl" x="241" y="93" text-anchor="middle" style="fill:#0f172a; font-weight:bold;">ЦПУ</text>
+  <rect class="dark" x="246" y="74" width="6" height="32"/>
+
+  <circle class="yellow" cx="236" cy="54" r="5"/><circle class="yellow" cx="248" cy="54" r="5"/>
+
+  ${L(['Рулевая машина'], 4, 24, 'start', 26, 76)}
+  ${L(['Вспомогательный', 'котёл'], 100, 24, 'start', 97, 63)}
+  ${L(['Дизель-генераторы', '(СЭС)'], 205, 24, 'start', 182, 60)}
+  ${L(['Баллоны', 'воздуха'], 241, 24, 'middle', 241, 49)}
+  ${L(['Валопровод'], 68, 142, 'middle', 68, 91)}
+  ${L(['Сепараторы'], 108, 158, 'start', 96, 117)}
+  ${L(['Главный двигатель'], 160, 158, 'middle', 160, 100)}`);
+
 const POINTS = [
   {
     title: 'Двойное дно', en: 'Double bottom',
@@ -994,11 +929,11 @@ const POINTS = [
     title: 'Судовая механика', en: 'Marine Engineering',
     pos: [-44.0, 5.0, 0], cam: [20, 8, 22], xray: true, diagram: diagMechanics,
     text: [
-      'Машинное отделение — сердце судна: здесь энергия топлива превращается в движение и электричество. На схеме главный двигатель — малооборотный дизель; на большинстве грузовых судов он соединён с гребным винтом напрямую, без редуктора, и вращает его со скоростью около 60–120 оборотов в минуту. Крутящий момент идёт по валопроводу через упорный подшипник, который передаёт тягу винта корпусу — именно так судно «толкает» себя вперёд.',
-      'Электростанция (СЭС) состоит из нескольких дизель-генераторов: дизель вращает альтернатор, а ток через главный распределительный щит (ГРЩ) питает насосы, освещение, радары, вентиляцию и рулевую машину. Агрегаты работают параллельно и подключаются по нагрузке: в море хватает одного-двух, при манёврах включают дополнительный. Аварийный генератор стоит вне машинного отделения, чтобы пожар в МО не оставил судно без тока.',
-      'Вспомогательный котёл даёт пар для подогрева тяжёлого топлива и цистерн, а сепараторы — центробежные «очистители» — отделяют от топлива воду и механические примеси ещё до двигателя. Выхлоп уходит по газоотводу в дымовую трубу. А над пером руля работает гидравлическая рулевая машина: плунжеры поворачивают румпель и баллер по приказу с мостика. По требованиям СОЛАС рулевых приводов должно быть два — основной и вспомогательный, чтобы судно не потеряло управляемость при отказе одного из них.',
+      'Машинное отделение — сердце судна. Крутящий момент от главного двигателя идёт по валопроводу через упорный подшипник, передавая тягу винта корпусу.',
+      'Дизель-генераторы (СЭС) питают судно током через Главный распределительный щит (ГРЩ). Сам ГРЩ находится в ЦПУ — звукоизолированной рубке механиков с обзорными окнами.',
+      'Для запуска огромного дизеля нужен сжатый воздух, который хранится в массивных жёлтых баллонах. Вспомогательный котёл даёт пар для подогрева мазута, а сепараторы очищают топливо. Над пером руля работает гидравлическая рулевая машина.',
     ],
-    tags: ['Главный двигатель', 'Дизель-генератор', 'Валопровод', 'Рулевая машина'],
+    tags: ['Главный двигатель', 'Дизель-генератор', 'ЦПУ', 'Пусковой воздух'],
   },
 ];
 
@@ -1009,16 +944,15 @@ const $ = (s) => document.querySelector(s);
 const canvas = $('#scene');
 const host = $('#app');
 
-/* --- Интеграция с Telegram Mini Apps --- */
 const tg = window.Telegram && window.Telegram.WebApp;
 if (tg) {
   try {
     tg.ready();
-    tg.expand();                                   // раскрыть на всю высоту
-    if (tg.disableVerticalSwipes) tg.disableVerticalSwipes(); // свайп вниз не должен закрывать приложение при вращении модели
+    tg.expand();
+    if (tg.disableVerticalSwipes) tg.disableVerticalSwipes();
     if (tg.setHeaderColor) tg.setHeaderColor('#07121f');
     if (tg.setBackgroundColor) tg.setBackgroundColor('#07121f');
-  } catch (e) { /* старые клиенты Telegram — просто работаем как в браузере */ }
+  } catch (e) {}
 }
 const haptic = (kind = 'light') => { try { tg && tg.HapticFeedback && tg.HapticFeedback.impactOccurred(kind); } catch (e) {} };
 
@@ -1028,11 +962,11 @@ try {
     canvas, antialias: true, alpha: true, powerPreference: 'high-performance',
   });
 } catch (e) {
-  $('#loader').innerHTML = '<p>Не удалось запустить WebGL. Откройте приложение в другом браузере.</p>';
+  $('#loader').innerHTML = '<p>Не удалось запустить WebGL.</p>';
   throw e;
 }
-renderer.setClearColor(0x000000, 0);                       // прозрачный фон (alpha: true)
-let maxDpr = Math.min(window.devicePixelRatio || 1, 2);    // ограничиваем плотность пикселей
+renderer.setClearColor(0x000000, 0);                       
+let maxDpr = Math.min(window.devicePixelRatio || 1, 2);    
 let dpr = maxDpr;
 renderer.setPixelRatio(dpr);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -1041,11 +975,9 @@ renderer.toneMappingExposure = 1.05;
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(38, 1, 1, 2000);
 
-// Окружение для красивых бликов на металле (PMREM строится один раз)
 const pmrem = new THREE.PMREMGenerator(renderer);
 scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 
-/* --- Свет --- */
 scene.add(new THREE.AmbientLight(0xbfd4ff, 0.35));
 scene.add(new THREE.HemisphereLight(0xbfd9ff, 0x0b1320, 0.55));
 const sun = new THREE.DirectionalLight(0xfff1dc, 2.3);
@@ -1054,7 +986,7 @@ scene.add(sun);
 const rim = new THREE.DirectionalLight(0x6fa8ff, 0.8);
 rim.position.set(-80, 40, -60);
 scene.add(rim);
-// Внутренний свет: включается в режиме рентгена и подсвечивает набор
+
 const innerLights = [-18, 25].map((x) => {
   const l = new THREE.PointLight(0xa8dcff, 0, 0, 2);
   l.position.set(x, 6, 0);
@@ -1062,7 +994,6 @@ const innerLights = [-18, 25].map((x) => {
   return l;
 });
 
-/* --- Вода и сетка (ориентир ватерлинии) --- */
 const waterMat = new THREE.MeshStandardMaterial({
   color: 0x0e3a5c, roughness: 0.2, metalness: 0.1, transparent: true, opacity: 0.34, depthWrite: false,
 });
@@ -1077,10 +1008,9 @@ grid.material.opacity = 0.32;
 grid.material.depthWrite = false;
 scene.add(grid);
 
-/* --- Судно --- */
 const { ship, refs, shellMats } = buildShip();
 scene.add(ship);
-// === ИНТЕГРАЦИЯ ГЛОБУСА ===
+
 const earth = createEarthGlobe({ radius: 15 });
 earth.group.visible = false;
 scene.add(earth.group);
@@ -1092,19 +1022,15 @@ let isShipView = true;
 if (toggleBtn) {
     toggleBtn.addEventListener('click', () => {
         isShipView = !isShipView;
-        
         earth.group.visible = !isShipView;
-        
         ship.visible = isShipView;
         water.visible = isShipView;
         grid.visible = isShipView;
         markerGroup.visible = isShipView; 
-
         toggleBtn.innerText = isShipView ? '🌐 Показать глобус' : '🚢 Показать судно';
     });
 }
 
-/* --- Управление камерой --- */
 const controls = new OrbitControls(camera, canvas);
 controls.enableDamping = true;
 controls.dampingFactor = 0.07;
@@ -1113,7 +1039,7 @@ controls.zoomSpeed = 0.9;
 controls.screenSpacePanning = true;
 controls.minDistance = 12;
 controls.maxDistance = 520;
-controls.maxPolarAngle = Math.PI * 0.78;          // можно заглянуть чуть снизу
+controls.maxPolarAngle = Math.PI * 0.78;          
 controls.autoRotateSpeed = 0.7;
 controls.target.set(3, 9, 0);
 
@@ -1141,19 +1067,16 @@ const hitMeshes = [];
 
 const markers = POINTS.map((p, i) => {
   const pos = new THREE.Vector3(...p.pos);
-  // Ядро — светящаяся голубая сфера (рисуется поверх корпуса: depthTest выключен)
   const core = new THREE.Mesh(
     new THREE.SphereGeometry(1, 16, 12),
     new THREE.MeshBasicMaterial({ color: 0x22e6ff, transparent: true, opacity: 0.95, depthTest: false })
   );
   core.renderOrder = 1000;
-  // Ореол — аддитивный спрайт со свечением
   const halo = new THREE.Sprite(new THREE.SpriteMaterial({
     map: glowTex, color: 0x22e6ff, transparent: true, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending,
   }));
   halo.renderOrder = 999;
-  // Невидимая увеличенная сфера для удобного попадания пальцем
-  const hit = new THREE.Mesh(new THREE.SphereGeometry(1, 8, 6), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  const hit = new THREE.Mesh(new THREE.SphereGeometry(0.15, 8, 6), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
   hit.userData.index = i;
   [core, halo, hit].forEach((o) => o.position.copy(pos));
   markerGroup.add(core, halo, hit);
@@ -1173,7 +1096,7 @@ function pickMarker(clientX, clientY) {
     return hits.length ? hits[0].object.userData.index : -1;
 }
 
-// --- УМНАЯ ОБРАБОТКА КАСАНИЙ ДЛЯ ТЕЛЕФОНОВ И ПК ---
+// Умная обработка касаний для мобилок
 const getPt = (e) => {
     if (e.clientX !== undefined && e.clientX !== 0) return { x: e.clientX, y: e.clientY };
     if (e.changedTouches && e.changedTouches.length) return { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY };
@@ -1185,7 +1108,7 @@ canvas.addEventListener('pointerdown', (e) => {
     const pt = getPt(e);
     down = { x: pt.x, y: pt.y, t: performance.now() };
     hideHint();
-    tween = null; // касание прерывает «подлёт» камеры
+    tween = null; 
 });
 
 canvas.addEventListener('pointerup', (e) => {
@@ -1194,8 +1117,6 @@ canvas.addEventListener('pointerup', (e) => {
     const moved = Math.hypot(pt.x - down.x, pt.y - down.y);
     const dt = performance.now() - down.t;
     down = null;
-    
-    // УВЕЛИЧЕННЫЙ ДОПУСК: прощаем скольжение пальца до 20px и удержание до 800 мс
     if (moved < 20 && dt < 800) {
         const idx = pickMarker(pt.x, pt.y);
         if (idx >= 0) selectPoint(idx);
@@ -1211,11 +1132,10 @@ canvas.addEventListener('pointermove', (e) => {
 
 /* ============================================================================
    12. РЕЖИМ «РАЗРЕЗ / РЕНТГЕН»
-   Материалам внешней оболочки плавно меняем transparent → true и opacity → 0.15
    ============================================================================ */
 const XRAY_OPACITY = 0.15;
 let xrayOn = false;
-let xrayMix = 0;                                   // 0 — выключен, 1 — полный рентген
+let xrayMix = 0;                                   
 
 function applyXray(mix) {
   const op = THREE.MathUtils.lerp(1, XRAY_OPACITY, mix);
@@ -1223,7 +1143,7 @@ function applyXray(mix) {
     const tr = !!m.userData.alwaysTransparent || mix > 0.001;
     if (m.transparent !== tr) { m.transparent = tr; m.needsUpdate = true; }
     m.opacity = op;
-    m.depthWrite = mix < 0.35;                      // у прозрачной оболочки не пишем глубину
+    m.depthWrite = mix < 0.35;                      
   }
   waterMat.opacity = THREE.MathUtils.lerp(0.34, 0.07, mix);
   grid.material.opacity = THREE.MathUtils.lerp(0.32, 0.14, mix);
@@ -1267,7 +1187,6 @@ function flyToPoint(i) {
   const p = POINTS[i];
   const T = new THREE.Vector3(...p.pos);
   const C = T.clone().add(new THREE.Vector3(...p.cam));
-  // Смещаем точку выше центра экрана, чтобы её не закрывала карточка
   const f = T.clone().sub(C).normalize();
   const right = new THREE.Vector3().crossVectors(f, UP).normalize();
   const upv = new THREE.Vector3().crossVectors(right, f).normalize();
@@ -1300,7 +1219,6 @@ const els = {
 };
 let selected = -1;
 
-// Чипы быстрого перехода
 const chipsEl = $('#chips');
 POINTS.forEach((p, i) => {
   const b = document.createElement('button');
@@ -1324,12 +1242,12 @@ function selectPoint(i) {
   card.classList.add('open');
   card.setAttribute('aria-hidden', 'false');
   document.body.classList.add('card-open');
-  requestAnimationFrame(() => {                      // передаём высоту карточки в CSS (док с кнопкой едет вверх)
+  requestAnimationFrame(() => {                      
     document.documentElement.style.setProperty('--card-h', card.offsetHeight + 'px');
     flyToPoint(i);
   });
   [...chipsEl.children].forEach((c, k) => c.classList.toggle('active', k === i));
-  if (p.xray && !xrayOn) setXray(true);              // внутренние детали — сразу включаем рентген
+  if (p.xray && !xrayOn) setXray(true);              
   hideHint();
   haptic('light');
   try { if (tg && tg.BackButton && tg.isVersionAtLeast && tg.isVersionAtLeast('6.1')) tg.BackButton.show(); } catch (e) {}
@@ -1349,7 +1267,6 @@ $('#card-next').addEventListener('click', () => selectPoint((selected + 1) % POI
 window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeCard(); });
 try { if (tg && tg.BackButton) tg.BackButton.onClick(closeCard); } catch (e) {}
 
-// Свайп карточки вниз для закрытия
 let drag = null;
 ['#card-grab', '#card-head'].forEach((sel) => {
   const h = $(sel);
@@ -1386,9 +1303,6 @@ setTimeout(hideHint, 9000);
 
 /* ============================================================================
    14б. ШПАРГАЛКИ (логика и контент — в study.js)
-   Пока панель открыта, 3D-фон размыт CSS-фильтром (body.study-open #scene).
-   Размытая картинка статична, поэтому через 0,7 с замораживаем рендер WebGL —
-   это экономит батарею и убирает лишнюю нагрузку от blur() на слабых телефонах.
    ============================================================================ */
 let studyFrozen = false;
 let studyFreezeTimer = 0;
@@ -1396,15 +1310,15 @@ initStudy({
   tg,
   haptic,
   onOpen() {
-    closeCard();                 // карточка метки не должна оставаться под панелью
+    closeCard();                 
     hideHint();
-    tween = null;                // отменяем «подлёт» камеры
+    tween = null;                
     clearTimeout(studyFreezeTimer);
     studyFreezeTimer = setTimeout(() => { studyFrozen = true; }, 700);
   },
   onClose() {
     clearTimeout(studyFreezeTimer);
-    studyFrozen = false;         // возвращаем живой рендер
+    studyFrozen = false;         
   },
 });
 
@@ -1418,8 +1332,8 @@ function resize() {
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
-  if (studyFrozen) renderer.render(scene, camera);   // setSize очищает холст — перерисуем кадр, пока цикл на паузе
-  if (firstFit) {                                    // стартовый ракурс подбираем под пропорции экрана
+  if (studyFrozen) renderer.render(scene, camera);   
+  if (firstFit) {                                    
     firstFit = false;
     const hv = homeView();
     camera.position.copy(hv.pos);
@@ -1439,14 +1353,14 @@ const perf = { acc: 0, n: 0 };
 let loaderHidden = false;
 
 renderer.setAnimationLoop(() => {
-  if (studyFrozen) return;                           // панель «Шпаргалки» открыта — рендер на паузе
+  if (studyFrozen) return;                           
   const dt = Math.min(clock.getDelta(), 0.05);
   const t = clock.elapsedTime;
-   if (earth.group.visible) {
+  
+  if (earth.group.visible) {
       earth.update(t);
   }
 
-  // Плавный подлёт камеры
   if (tween) {
     tween.t = Math.min(1, tween.t + dt / tween.dur);
     const k = easeInOut(tween.t);
@@ -1455,7 +1369,6 @@ renderer.setAnimationLoop(() => {
     if (tween.t >= 1) tween = null;
   }
 
-  // Плавный переход рентгена
   const goal = xrayOn ? 1 : 0;
   if (Math.abs(goal - xrayMix) > 0.0005) {
     xrayMix += (goal - xrayMix) * Math.min(1, dt * 7);
@@ -1463,7 +1376,6 @@ renderer.setAnimationLoop(() => {
     applyXray(xrayMix);
   }
 
-  // Пульсация маркеров; размер на экране постоянный (масштаб пропорционален расстоянию до камеры)
   for (let i = 0; i < markers.length; i++) {
     const m = markers[i];
     const s = camera.position.distanceTo(m.pos) * 0.0125;
@@ -1473,18 +1385,19 @@ renderer.setAnimationLoop(() => {
     m.core.scale.setScalar(s * pulse * (sel ? 1.25 : 1));
     m.halo.scale.setScalar(s * 5.5 * pulse2 * (sel ? 1.3 : 1));
     m.hit.scale.setScalar(s * 2.4);
-    m.hit.updateMatrixWorld(true); // ДОБАВЛЕНА СИНХРОНИЗАЦИЯ
+    
+    // Синхронизация матрицы (очень важно для Raycaster!)
+    m.hit.updateMatrixWorld(true); 
+    
     m.core.material.color.setHex(sel ? 0xd6fdff : 0x22e6ff);
     m.halo.material.opacity = 0.7 + 0.3 * Math.sin(t * 3.2 + m.phase);
   }
 
-  // Вращающиеся радары на мачте
   refs.radars.forEach((r, i) => { r.rotation.y += dt * (i ? -2.4 : 3.2); });
 
   controls.update();
   renderer.render(scene, camera);
 
-  // Адаптивная плотность пикселей: если кадры медленные, снижаем разрешение
   perf.acc += dt; perf.n++;
   if (perf.n >= 90) {
     const avg = perf.acc / perf.n;
@@ -1496,7 +1409,7 @@ renderer.setAnimationLoop(() => {
     }
   }
 
-  if (!loaderHidden) {                               // убираем экран загрузки после первого кадра
+  if (!loaderHidden) {                               
     loaderHidden = true;
     $('#loader').classList.add('hide');
   }
